@@ -1,0 +1,925 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>کتابخانه کانون مهدویت صبح باور</title>
+  <meta name="description" content="سامانه مدیریت ساده کتابخانه — نمایش عمومی و مدیریت توسط کتابدار" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/persian-datepicker@1.2.0/dist/css/persian-datepicker.min.css">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/persian-date@1.2.0/dist/persian-date.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/persian-datepicker@1.2.0/dist/js/persian-datepicker.js"></script>
+  <style>
+    html, body { height: 100%; background: #0b1020; }
+    .glass { background: rgba(255,255,255,0.06); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.08); }
+    .chip { border:1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.05); }
+    input, select, textarea { background: rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12); }
+    label { font-size: 12px; color: rgba(226,232,240,.8); }
+  </style>
+</head>
+<body class="text-slate-100">
+  <div id="app" class="max-w-7xl mx-auto p-4 sm:p-6">
+    <header class="flex items-center justify-between mb-6">
+      <div class="flex items-center gap-3">
+        <img id="logo" alt="لوگو" class="w-10 h-10 rounded-2xl border border-white/20 object-cover hidden" />
+        <span id="logoFallback" class="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30">
+          <i data-lucide="book" class="w-6 h-6 text-indigo-300"></i>
+        </span>
+        <div>
+          <h1 class="text-2xl font-bold">کتابخانه کانون مهدویت صبح باور</h1>
+          <p id="tagline" class="text-xs text-slate-300/70">جست‌وجوی کتاب‌ها و وضعیت موجودی؛ مدیریت توسط کتابدار</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <button id="btnAdminAuth" class="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600">ورود کتابدار</button>
+        <div id="userBox" class="hidden items-center gap-3"></div>
+      </div>
+    </header>
+
+    <section id="catalog" class="glass rounded-3xl p-5 mb-6">
+      <div class="flex flex-col sm:flex-row gap-3 items-center justify-between mb-4">
+        <div class="flex gap-2 w-full sm:w-auto">
+          <input id="search" class="rounded-xl px-3 py-2 w-full sm:w-96" placeholder="جستجو در عنوان، نویسنده، مترجم، موضوع، کلیدواژه، ناشر، سال، ISBN" />
+          <button id="btnSearch" class="px-4 py-2 rounded-xl bg-indigo-500">جستجو</button>
+        </div>
+        <div class="text-sm text-slate-300/80">تعداد: <span class="px-2 py-1 rounded-lg chip" id="catalogCount">—</span></div>
+      </div>
+      <div id="catalogList" class="grid lg:grid-cols-2 gap-3"></div>
+    </section>
+
+    <section id="adminShell" class="hidden">
+      <div class="flex flex-wrap gap-2 mb-4">
+        <button data-tab="admin-books" class="tab chip px-4 py-2 rounded-xl">📚 کتاب‌ها</button>
+        <button data-tab="admin-members" class="tab chip px-4 py-2 rounded-xl">👥 اعضا</button>
+        <button data-tab="admin-loans" class="tab chip px-4 py-2 rounded-xl">🔄 امانت‌ها</button>
+        <button data-tab="admin-import" class="tab chip px-4 py-2 rounded-xl">⬆️ ایمپورت/⬇️ اکسپورت</button>
+        <button data-tab="admin-settings" class="tab chip px-4 py-2 rounded-xl">⚙️ تنظیمات</button>
+      </div>
+
+      <div id="tab-admin-books" class="glass rounded-3xl p-5 hidden">
+        <h3 class="font-bold mb-4">افزودن/ویرایش کتاب</h3>
+        <form id="bookForm" class="grid md:grid-cols-3 gap-4 mb-6">
+          <div class="md:col-span-2 grid grid-cols-2 gap-4">
+            <div class="col-span-2">
+              <label>عنوان *</label>
+              <input id="bk_title" class="rounded-xl px-3 py-2 w-full" required />
+            </div>
+            <div><label>نویسنده</label><input id="bk_author" class="rounded-xl px-3 py-2 w-full" /></div>
+            <div><label>مترجم</label><input id="bk_translator" class="rounded-xl px-3 py-2 w-full" /></div>
+            <div><label>سال انتشار</label><input id="bk_published_year" type="number" class="rounded-xl px-3 py-2 w-full" /></div>
+            <div><label>تعداد صفحات</label><input id="bk_pages" type="number" class="rounded-xl px-3 py-2 w-full" /></div>
+            <div><label>موضوع</label><input id="bk_subject" class="rounded-xl px-3 py-2 w-full" /></div>
+            <div><label>کلیدواژه‌ها (با ; جدا کنید)</label><input id="bk_keywords" class="rounded-xl px-3 py-2 w-full" /></div>
+            <div><label>انتشارات</label><input id="bk_publisher" class="rounded-xl px-3 py-2 w-full" /></div>
+            <div><label>کد/ISBN</label><input id="bk_isbn" class="rounded-xl px-3 py-2 w-full" /></div>
+            <div><label>تعداد نسخه *</label><input id="bk_total" type="number" min="1" value="1" class="rounded-xl px-3 py-2 w-full" required /></div>
+          </div>
+          <div>
+            <label>عکس جلد</label>
+            <input id="bk_cover" type="file" accept="image/*" class="block w-full text-sm" />
+            <img id="coverPreview" class="mt-3 rounded-xl max-h-48 hidden" />
+          </div>
+          <div class="md:col-span-3">
+            <button class="px-4 py-2 rounded-xl bg-emerald-600">ذخیره</button>
+          </div>
+        </form>
+        <h3 class="font-bold mb-2">کتاب‌ها</h3>
+        <div id="adminBooks" class="space-y-3"></div>
+      </div>
+
+      <div id="tab-admin-members" class="glass rounded-3xl p-5 hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-bold">اعضا</h3>
+          <button id="btnAddMember" class="px-3 py-2 rounded-xl bg-slate-600">افزودن عضو</button>
+        </div>
+        <div id="membersList" class="space-y-3"></div>
+      </div>
+
+      
+      <div id="tab-admin-loans" class="glass rounded-3xl p-5 hidden">
+        <h3 class="font-bold mb-4">ثبت امانت</h3>
+        <form id="loanForm" class="grid md:grid-cols-4 gap-4 mb-6">
+          <div class="md:col-span-2">
+            <label>عضو</label>
+            <input id="loan_member_query" class="rounded-xl px-3 py-2 w-full" placeholder="نام/نام‌خانوادگی/شماره دانشجویی" autocomplete="off" />
+            <div id="loan_member_results" class="mt-2 text-sm"></div>
+          </div>
+          <div class="md:col-span-2">
+            <label>کتاب</label>
+            <input id="loan_book_query" class="rounded-xl px-3 py-2 w-full" placeholder="عنوان/نویسنده/ISBN" autocomplete="off" />
+            <div id="loan_book_results" class="mt-2 text-sm"></div>
+          </div>
+
+          <div>
+            <label>تاریخ امانت (هجری شمسی)</label>
+            <div class="date-input-wrap">
+              <input id="loan_borrowed" type="text" class="rounded-xl px-3 py-2 w-full" readonly />
+              <button type="button" id="btn_open_borrowed" class="date-btn" style="width:32px;height:32px;display:inline-flex" aria-label="باز کردن تقویم"><i data-lucide="calendar" class="w-4 h-4"></i></button>
+            </div>
+          </div>
+          <div>
+            <label>تاریخ سررسید (هجری شمسی)</label>
+            <div class="date-input-wrap">
+              <input id="loan_due" type="text" class="rounded-xl px-3 py-2 w-full" readonly />
+              <button type="button" id="btn_open_due" class="date-btn" style="width:32px;height:32px;display:inline-flex" aria-label="باز کردن تقویم"><i data-lucide="calendar" class="w-4 h-4"></i></button>
+            </div>
+          </div>
+
+          <div class="md:col-span-4"><button class="px-4 py-2 rounded-xl bg-emerald-600">ثبت امانت</button></div>
+        </form>
+
+        <h3 class="font-bold mb-3">امانت‌های معوق (گذشته از سررسید)</h3>
+        <div id="loanListOverdue" class="space-y-3 mb-6"></div>
+
+        <h3 class="font-bold mb-2">امانت‌های فعال</h3>
+        <div id="loanList" class="space-y-3"></div>
+      </div>
+      <div id="tab-admin-import"
+     class="glass rounded-3xl p-5 hidden">
+        <h3 class="font-bold mb-4">ایمپورت اکسل/CSV</h3>
+        <div class="grid md:grid-cols-2 gap-6">
+          <div>
+            <h4 class="font-bold mb-2">اعضا</h4>
+            <input id="fileMembers" type="file" accept=".xlsx,.xls,.csv" />
+            <p class="text-xs text-slate-300 mt-2">ستون‌ها: first_name, last_name, entry_year, degree, student_id, phone, email</p>
+            <button id="btnImportMembers" class="mt-3 px-3 py-2 rounded-xl bg-indigo-500">ایمپورت اعضا</button>
+          </div>
+          <div>
+            <h4 class="font-bold mb-2">کتاب‌ها</h4>
+            <input id="fileBooks" type="file" accept=".xlsx,.xls,.csv" />
+            <p class="text-xs text-slate-300 mt-2">ستون‌ها: title*, author, translator, pages, published_year, subject, keywords(با ;), publisher, isbn, total_copies*, cover_url</p>
+            <button id="btnImportBooks" class="mt-3 px-3 py-2 rounded-xl bg-indigo-500">ایمپورت کتاب‌ها</button>
+          </div>
+        </div>
+        <hr class="my-6 border-white/10" />
+        <h3 class="font-bold mb-2">اکسپورت CSV</h3>
+        <div class="flex flex-wrap gap-2">
+          <button id="btnExportBooks" class="px-3 py-2 rounded-xl bg-slate-700">کتاب‌ها</button>
+          <button id="btnExportMembers" class="px-3 py-2 rounded-xl bg-slate-700">اعضا</button>
+          <button id="btnExportLoans" class="px-3 py-2 rounded-xl bg-slate-700">امانت‌ها</button>
+        </div>
+      </div>
+
+      <div id="tab-admin-settings" class="glass rounded-3xl p-5 hidden">
+        <h3 class="font-bold mb-4">تنظیمات</h3>
+        <form id="settingsForm" class="grid md:grid-cols-3 gap-4">
+          <div><label>مدت پیش‌فرض امانت (روز)</label><input id="st_default_days" type="number" class="rounded-xl px-3 py-2 w-full" /></div>
+          <div class="md:col-span-3"><label>لوگوی سایت (اختیاری)</label><input id="st_logo" type="file" accept="image/*" /></div>
+          <div class="md:col-span-3"><label>شعار بالای سایت</label><input id="st_tagline" class="rounded-xl px-3 py-2 w-full" placeholder="مثلاً: سامانه کتابخانه کانون..." /></div>
+          <div class="md:col-span-3"><button class="px-4 py-2 rounded-xl bg-emerald-600">ذخیره تنظیمات</button></div>
+        </form>
+      </div>
+    </section>
+
+    <footer class="mt-8 text-center text-xs text-slate-400/80">
+      کانون مهدویت صبح باور • معاونت فرهنگی و اجتماعی دانشگاه صنعتی اصفهان
+    </footer>
+  </div>
+
+<script>
+const SUPABASE_URL = "https://haqocojpgoqiktftdjyw.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhhcW9jb2pwZ29xaWt0ZnRkanl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE3MjA4MzIsImV4cCI6MjA3NzI5NjgzMn0.X7PMt1j3wpIBHNfn6RVz_SzDCnqTRZgHtLx0XidsF7Y";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const $ = (sel)=> document.querySelector(sel);
+const $$ = (sel)=> Array.from(document.querySelectorAll(sel));
+const fmtDate = (s)=> new Date(s).toLocaleDateString('fa-IR');
+const toast = (msg)=>{ const el=document.createElement('div'); el.className='fixed bottom-4 right-4 bg-black/80 text-white px-3 py-2 rounded-xl text-sm'; el.textContent=msg; document.body.appendChild(el); setTimeout(()=>el.remove(),3000); };
+
+function toCSV(rows){
+  if(!rows || !rows.length) return '';
+  const headers = Object.keys(rows[0]);
+  const csvRows = [headers.join(',')];
+  for(const r of rows){
+    const values = headers.map(h=> `"${(r[h]??'').toString().replace(/"/g,'""')}"`);
+    csvRows.push(values.join(','));
+  }
+  return csvRows.join('\n');
+}
+const download = (filename, content, mime='text/csv')=>{
+  const blob = new Blob([content], {type:mime});
+  const url = URL.createObjectURL(blob); const a = document.createElement('a');
+  a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url);
+};
+
+let user = null, profile = null;
+async function refreshSession(){
+  const { data:{ session } } = await supabase.auth.getSession();
+  user = session?.user || null;
+  if(user){
+    const { data: p } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+    profile = p || { id:user.id, full_name:user.email, is_admin:false };
+  }
+  renderHeader();
+}
+function renderHeader(){
+  const userBox = $('#userBox');
+  if(!user || !profile?.is_admin){
+    userBox.classList.add('hidden');
+    $('#adminShell').classList.add('hidden');
+    return;
+  }
+  userBox.classList.remove('hidden');
+  userBox.innerHTML = `
+    <span class="chip px-2 py-1 rounded-lg text-xs">کتابدار</span>
+    <span class="text-sm">${profile?.full_name || user.email}</span>
+    <button id="btnSignOut" class="px-3 py-1 rounded-xl bg-rose-600">خروج</button>
+  `;
+  $('#btnSignOut').onclick = async ()=>{ await supabase.auth.signOut(); location.reload(); };
+  $('#adminShell').classList.remove('hidden');
+  selectTab('admin-books');
+  loadAdminBooks(); loadMembers(); loadLoans(); loadSettings();
+}
+
+$('#btnAdminAuth').onclick = async () => {
+  const email = prompt('ایمیل کتابدار:');
+  const password = email ? prompt('رمز عبور:') : null;
+  if(!email || !password) return;
+
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if(!error){ await refreshSession(); return; }
+
+  const needSignup = error.message?.includes('Invalid login credentials') || error.status === 400;
+  if(needSignup){
+    const { error: e2 } = await supabase.auth.signUp({ email, password });
+    if(e2){ toast(e2.message); return; }
+    toast('ثبت‌نام انجام شد؛ دوباره روی «ورود کتابدار» بزنید.');
+    return;
+  }
+  toast(error.message || 'خطای ورود');
+};
+
+$$('.tab').forEach(btn=> btn.onclick = ()=> selectTab(btn.dataset.tab));
+function selectTab(name){
+  ["admin-books","admin-members","admin-loans","admin-import","admin-settings"].forEach(t=> $('#tab-'+t)?.classList.add('hidden'));
+  $('#tab-'+name)?.classList.remove('hidden');
+  $$('.tab').forEach(b=> b.classList.remove('bg-white/10'));
+  document.querySelector(`[data-tab="${name}"]`)?.classList.add('bg-white/10');
+}
+
+$('#btnSearch').onclick = ()=> loadCatalog($('#search').value.trim());
+
+async function loadCatalog(q=''){
+  let query = supabase.from('books').select('id,title,author,translator,subject,keywords,publisher,isbn,published_year,pages,total_copies,available_copies,cover_url').order('title');
+  if(q){
+    query = query.or(`title.ilike.%${q}%,author.ilike.%${q}%,translator.ilike.%${q}%,subject.ilike.%${q}%,publisher.ilike.%${q}%,isbn.ilike.%${q}%`);
+  }
+  const { data, error } = await query;
+  if(error) return toast(error.message);
+  const list = document.querySelector('#catalogList');
+  const count = document.querySelector('#catalogCount');
+  if(count) count.textContent = (data||[]).length + ' کتاب';
+  list.innerHTML = (data||[]).map(b=>{
+    const available = (b.available_copies ?? 0) > 0;
+    const kw = Array.isArray(b.keywords) ? b.keywords.filter(Boolean) :
+               (typeof b.keywords === 'string' ? b.keywords.split(';').map(s=>s.trim()).filter(Boolean) : []);
+    const mid = `more-${b.id}`;
+    return `
+      <div class="glass rounded-2xl p-4">
+        <div class="flex items-start gap-4">
+          <img src="${b.cover_url||''}" alt="cover" class="w-20 h-28 object-cover rounded-xl border border-white/10 ${b.cover_url? '' : 'hidden'}"/>
+          <div class="flex-1">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="font-bold">${b.title||'—'}</div>
+                <div class="text-sm text-slate-300/80">نویسنده: ${b.author||'—'} ${b.translator? `• مترجم: ${b.translator}`:''}</div>
+                <div class="text-xs text-slate-400 mt-1">${b.publisher? `انتشارات: ${b.publisher}`:''}</div>
+                <button class="mt-2 text-xs px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20"
+                        onclick="const el=document.getElementById('${mid}'); el.classList.toggle('hidden'); this.textContent = el.classList.contains('hidden') ? 'نمایش بیشتر' : 'نمایش کمتر';">
+                  نمایش بیشتر
+                </button>
+                <div id="${mid}" class="hidden text-xs text-slate-400 mt-2 leading-6">
+                  ${b.subject? `موضوع: ${b.subject}<br/>`:''}
+                  ${b.published_year? `سال انتشار: ${b.published_year}<br/>`:''}
+                  ${b.pages? `تعداد صفحات: ${b.pages}<br/>`:''}
+                  ${b.isbn? `ISBN: ${b.isbn}<br/>`:''}
+                  ${kw.length? `<div class="mt-1 flex flex-wrap gap-1">${kw.map(k=>`<span class='chip px-2 py-0.5 rounded-lg'>${k}</span>`).join('')}</div>`:''}
+                </div>
+              </div>
+              <div class="text-sm flex flex-col items-end gap-2">
+                <span class="chip px-2 py-1 rounded-lg ${available? 'text-emerald-300' : 'text-rose-300'}">${available? 'موجود' : 'امانت'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+
+const coverInput = $('#bk_cover');
+coverInput?.addEventListener('change', (e)=>{
+  const f = e.target.files?.[0]; if(!f) return;
+  const url = URL.createObjectURL(f); $('#coverPreview').src=url; $('#coverPreview').classList.remove('hidden');
+});
+$('#bookForm')?.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const title = $('#bk_title').value.trim();
+  if(!title) return toast('عنوان الزامی است');
+  const { data: exists } = await supabase.from('books').select('id').ilike('title', title).limit(1);
+  if((exists||[]).length){ toast('کتابی با این عنوان قبلاً ثبت شده است'); return; }
+
+  let cover_url = null;
+  const file = coverInput?.files?.[0];
+  if(file){
+    const safeName = ('c'+Date.now()+'-'+file.name).replace(/[^a-zA-Z0-9\.\-_]/g,'_');
+    const up = await supabase.storage.from('book_covers').upload(safeName, file, { contentType: file.type, upsert: true });
+    if(up.error) return toast(up.error.message);
+    const pub = supabase.storage.from('book_covers').getPublicUrl(up.data.path); cover_url = pub.data.publicUrl;
+  }
+  const payload = {
+    title,
+    author: $('#bk_author').value.trim(),
+    translator: $('#bk_translator').value.trim()||null,
+    pages: parseInt($('#bk_pages').value,10)||null,
+    published_year: parseInt($('#bk_published_year').value,10)||null,
+    subject: $('#bk_subject').value.trim()||null,
+    keywords: ($('#bk_keywords').value||'').split(';').map(s=>s.trim()).filter(Boolean),
+    publisher: $('#bk_publisher').value.trim()||null,
+    isbn: $('#bk_isbn').value.trim()||null,
+    total_copies: parseInt($('#bk_total').value,10)||1,
+    available_copies: parseInt($('#bk_total').value,10)||1,
+    cover_url
+  };
+  const { error } = await supabase.from('books').insert(payload);
+  if(error) return toast(error.message);
+  toast('کتاب ذخیره شد');
+  ['#bk_title','#bk_author','#bk_translator','#bk_pages','#bk_published_year','#bk_subject','#bk_keywords','#bk_publisher','#bk_isbn'].forEach(s=> $(s).value='');
+  $('#bk_total').value = 1; $('#bk_cover').value=''; $('#coverPreview').classList.add('hidden');
+  loadCatalog(); loadAdminBooks();
+});
+async function loadAdminBooks(){
+  const { data, error } = await supabase.from('books').select('*').order('created_at', { ascending:false });
+  if(error) return toast(error.message);
+  $('#adminBooks').innerHTML = (data||[]).map(b=>`
+    <div class="glass rounded-2xl p-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <img src="${b.cover_url||''}" class="w-12 h-16 object-cover rounded-lg border border-white/10 ${b.cover_url? '': 'hidden'}"/>
+        <div>
+          <div class="font-bold">${b.title}</div>
+          <div class="text-xs text-slate-400">نویسنده: ${b.author||'—'} ${b.translator? '• مترجم: '+b.translator:''} • انتشارات: ${b.publisher||'—'} • سال: ${b.published_year||'—'}</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 text-sm">
+        <span class="chip px-2 py-1 rounded-lg">موجود: ${b.available_copies}/${b.total_copies}</span>
+        <button class="px-3 py-1 rounded-lg bg-slate-600" onclick='editBook(${JSON.stringify(b).replaceAll("'","&#39;")})'>ویرایش</button>
+        <button class="px-3 py-1 rounded-lg bg-rose-600" onclick="deleteBook(${b.id})">حذف</button>
+      </div>
+    </div>`).join('');
+}
+async function deleteBook(id){
+  if(!confirm('کتاب حذف شود؟')) return;
+  const { error } = await supabase.from('books').delete().eq('id', id);
+  if(error) return toast(error.message);
+  toast('حذف شد'); loadCatalog(); loadAdminBooks();
+}
+async function editBook(b){ /* replaced by modal version */ return window.editBook(b); }
+
+async function loadMembers(){
+  const { data, error } = await supabase.from('members').select('*').order('last_name');
+  if(error) return toast(error.message);
+  $('#membersList').innerHTML = (data||[]).map(m=>`
+    <div class="glass rounded-2xl p-4 flex items-center justify-between">
+      <div>
+        <div class="font-bold">${m.first_name||''} ${m.last_name||''}</div>
+        <div class="text-xs text-slate-400">${m.degree||''} • ${m.entry_year||''} • ${m.student_id||''} • ${m.email||''} • ${m.phone||''}</div>
+      </div>
+      <div class="flex items-center gap-2 text-sm">
+        <button class="px-3 py-1 rounded-lg bg-slate-600" onclick='editMember(${JSON.stringify(m).replaceAll("'","&#39;")})'>ویرایش</button>
+        <button class="px-3 py-1 rounded-lg bg-rose-600" onclick="deleteMember(${m.id})">حذف</button>
+      </div>
+    </div>`).join('');
+}
+async function editMember(m){ /* replaced by modal version */ return window.editMember(m); }
+async function deleteMember(id){
+  if(!confirm('عضو حذف شود؟')) return;
+  const { error } = await supabase.from('members').delete().eq('id', id);
+  if(error) return toast(error.message); toast('حذف شد'); loadMembers();
+}
+
+$('#loanForm')?.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const memberId = $('#loan_member_results')?.dataset.sel;
+  const bookId = $('#loan_book_results')?.dataset.sel;
+  if(!memberId || !bookId) { toast('عضو و کتاب را انتخاب کنید'); return; }
+
+  let due_at_iso;
+  const dueStr = $('#loan_due').value?.trim();
+  if (dueStr) {
+    try {
+      const parts = dueStr.replaceAll('-', '/').split('/').map(x=>parseInt(x,10));
+      const pd = new persianDate([parts[0], parts[1], parts[2]]).toGregorian();
+      const g = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0);
+      due_at_iso = g.toISOString();
+    } catch(e){}
+  }
+  if(!due_at_iso){
+    const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
+    const days = st?.default_loan_days || 14;
+    due_at_iso = new Date(Date.now() + days*24*3600*1000).toISOString();
+  }
+
+  const { data: loan, error } = await supabase.rpc('issue_loan', {
+    p_book_id: parseInt(bookId, 10),
+    p_member_id: parseInt(memberId, 10),
+    p_admin_id: user.id,
+    p_due_at: due_at_iso
+  });
+  if (error) { toast(error.message || 'خطا در ثبت امانت'); return; }
+  toast('امانت ثبت شد');
+  loadCatalog(); loadLoans();
+});
+
+$('#loan_member_query')?.addEventListener('input', async (e)=>{
+  const q = e.target.value.trim(); if(!q){ $('#loan_member_results').innerHTML=''; $('#loan_member_results').dataset.sel=''; return; }
+  let { data } = await supabase.from('members').select('id,first_name,last_name,student_id').or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,student_id.ilike.%${q}%`).limit(8);
+  $('#loan_member_results').innerHTML = (data||[]).map(m=>`<button class='chip px-2 py-1 rounded-lg mr-1 mb-1' data-id='${m.id}'>${m.first_name||''} ${m.last_name||''} • ${m.student_id||''}</button>`).join('');
+  $$('#loan_member_results button').forEach(b=> b.onclick = ()=>{ $('#loan_member_results').dataset.sel=b.dataset.id; toast('عضو انتخاب شد'); });
+});
+$('#loan_book_query')?.addEventListener('input', async (e)=>{
+  const q = e.target.value.trim(); if(!q){ $('#loan_book_results').innerHTML=''; $('#loan_book_results').dataset.sel=''; return; }
+  let { data } = await supabase.from('books').select('id,title,author,isbn,available_copies').or(`title.ilike.%${q}%,author.ilike.%${q}%,isbn.ilike.%${q}%`).gte('available_copies',1).limit(8);
+  $('#loan_book_results').innerHTML = (data||[]).map(b=>`<button class='chip px-2 py-1 rounded-lg mr-1 mb-1' data-id='${b.id}'>${b.title} ${b.author? '• '+b.author:''} ${b.isbn? '• '+b.isbn:''}</button>`).join('');
+  $$('#loan_book_results button').forEach(b=> b.onclick = ()=>{ $('#loan_book_results').dataset.sel=b.dataset.id; toast('کتاب انتخاب شد'); });
+});
+
+async function loadLoans(){
+  const { data, error } = await supabase.from('loans').select('id,borrowed_at,due_at,returned_at, renewals_count, members:member_id(first_name,last_name), books:book_id(title), admins:issued_by_admin_id(full_name)').is('returned_at', null).order('borrowed_at',{ascending:false});
+  if(error) return toast(error.message);
+  $('#loanList').innerHTML = (data||[]).map(l=>`
+    <div class="glass rounded-2xl p-4 space-y-2">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="font-bold">${l.books?.title||'—'}</div>
+          <div class="text-xs text-slate-300">مسئول: ${l.admins?.full_name||'—'} • امانت‌گیرنده: ${(l.members?.first_name||'')+' '+(l.members?.last_name||'')}</div>
+          <div class="text-xs text-slate-400">تاریخ امانت: ${fmtDate(l.borrowed_at)} • سررسید: ${fmtDate(l.due_at)} • تمدیدها: ${l.renewals_count ?? 0}</div>
+        </div>
+        <div class="flex gap-2">
+          <button class="px-3 py-1 rounded-lg bg-slate-600" onclick="editLoan(${l.id})">ویرایش</button>
+          <button class="px-3 py-1 rounded-lg bg-amber-600" onclick="returnLoan(${l.id})">بازگشت</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+async function editLoan(id){
+  const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
+  if(error || !l) { toast('یافت نشد'); return; }
+  const b = prompt('تاریخ امانت (YYYY/MM/DD - شمسی)', new persianDate(new Date(l.borrowed_at)).format('YYYY/MM/DD'));
+  const d = prompt('تاریخ سررسید (YYYY/MM/DD - شمسی)', new persianDate(new Date(l.due_at)).format('YYYY/MM/DD'));
+  const r = parseInt(prompt('تعداد تمدیدها', l.renewals_count ?? 0) || '0', 10);
+  let borrowed_at = l.borrowed_at, due_at = l.due_at;
+  try{ const pb = new persianDate(b.split('/').map(Number)).toGregorian(); borrowed_at = new Date(pb[0], pb[1]-1, pb[2], 12, 0, 0).toISOString(); }catch(e){}
+  try{ const pd = new persianDate(d.split('/').map(Number)).toGregorian(); due_at = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0).toISOString(); }catch(e){}
+  const { error: e2 } = await supabase.from('loans').update({ borrowed_at, due_at, renewals_count: r }).eq('id', id);
+  if(e2) return toast(e2.message); toast('به‌روزرسانی شد'); loadLoans();
+}
+async function returnLoan(id){
+  const { data, error } = await supabase.rpc('return_loan', { p_loan_id: id });
+  if (error) { toast(error.message || 'خطا در ثبت بازگشت'); return; }
+  toast('بازگشت ثبت شد'); loadCatalog(); loadLoans();
+}
+
+async function readSheet(file){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = e=>{ const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'}); const ws = wb.Sheets[wb.SheetNames[0]]; const rows = XLSX.utils.sheet_to_json(ws, {defval:''}); resolve(rows); };
+    reader.onerror = reject; reader.readAsArrayBuffer(file);
+  });
+}
+$('#btnImportMembers')?.addEventListener('click', async ()=>{
+  const f = $('#fileMembers').files?.[0]; if(!f) return toast('فایل انتخاب نشده');
+  const rows = await readSheet(f);
+  const mapped = rows.map(r=>({
+    first_name: r.first_name||r['first name']||r['نام']||null,
+    last_name: r.last_name||r['last name']||r['نام خانوادگی']||null,
+    entry_year: parseInt(r.entry_year||r['entry year']||r['سال ورود'])||null,
+    degree: r.degree||r['مقطع']||null,
+    student_id: (r.student_id||r['student id']||r['شماره دانشجویی']||'').toString()||null,
+    phone: (r.phone||r['شماره تلفن']||'').toString()||null,
+    email: r.email||r['ایمیل']||null,
+  }));
+  const valid = mapped.filter(m=> m.first_name || m.last_name || m.student_id || m.email);
+  if(!valid.length) return toast('هیچ رکورد معتبری یافت نشد');
+  const { error } = await supabase.from('members').insert(valid);
+  if(error) return toast(error.message); toast('ایمپورت اعضا انجام شد'); loadMembers();
+});
+$('#btnImportBooks')?.addEventListener('click', async ()=>{
+  const f = $('#fileBooks').files?.[0]; if(!f) return toast('فایل انتخاب نشده');
+  const rows = await readSheet(f);
+  const mapped = rows.map(r=>({
+    title: r.title||r['عنوان']||'',
+    author: r.author||r['نویسنده']||null,
+    translator: r.translator||r['مترجم']||null,
+    pages: parseInt(r.pages||r['تعداد صفحات'])||null,
+    published_year: parseInt(r.published_year||r['سال انتشار'])||null,
+    subject: r.subject||r['موضوع']||null,
+    keywords: ((r.keywords||r['کلیدواژه‌ها']||'')+'').split(';').map(s=>s.trim()).filter(Boolean),
+    publisher: r.publisher||r['انتشارات']||null,
+    isbn: r.isbn||r['ISBN']||null,
+    total_copies: parseInt(r.total_copies||r['تعداد نسخه'])||1,
+    available_copies: parseInt(r.total_copies||r['تعداد نسخه'])||1,
+    cover_url: r.cover_url||null
+  }));
+  const valid = mapped.filter(b=> b.title);
+  if(!valid.length) return toast('هیچ رکورد معتبری یافت نشد');
+  const { error } = await supabase.from('books').insert(valid);
+  if(error) return toast(error.message); toast('ایمپورت کتاب‌ها انجام شد'); loadCatalog(); loadAdminBooks();
+});
+$('#btnExportBooks')?.addEventListener('click', async ()=>{ const { data } = await supabase.from('books').select('*'); download('books.csv', toCSV(data||[])); });
+$('#btnExportMembers')?.addEventListener('click', async ()=>{ const { data } = await supabase.from('members').select('*'); download('members.csv', toCSV(data||[])); });
+$('#btnExportLoans')?.addEventListener('click', async ()=>{ const { data } = await supabase.from('loans').select('id,book_id,member_id,borrowed_at,due_at,returned_at,renewals_count'); download('loans.csv', toCSV(data||[])); });
+
+async function loadSettings(){
+  const { data } = await supabase.from('settings').select('*').eq('id',1).maybeSingle();
+  $('#st_default_days').value = data?.default_loan_days ?? 14;
+  $('#st_tagline').value = data?.tagline || '';
+  if (data?.logo_url) { document.getElementById('logo').src = data.logo_url; document.getElementById('logo').classList.remove('hidden'); document.getElementById('logoFallback').classList.add('hidden'); }
+  if (data?.tagline) { document.getElementById('tagline').textContent = data.tagline; }
+}
+$('#settingsForm')?.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  let logo_url = null;
+  const file = document.getElementById('st_logo').files?.[0];
+  if(file){
+    const safe = ('logo-'+Date.now()+'-'+file.name).replace(/[^a-zA-Z0-9\.\-_]/g,'_');
+    const up = await supabase.storage.from('book_covers').upload(safe, file, { contentType: file.type, upsert: true });
+    if(up.error){ toast(up.error.message); return; }
+    const pub = supabase.storage.from('book_covers').getPublicUrl(up.data.path); logo_url = pub.data.publicUrl;
+  }
+  const payload = {
+    id: 1,
+    default_loan_days: parseInt(document.getElementById('st_default_days').value,10)||14,
+    tagline: document.getElementById('st_tagline').value || null,
+  };
+  if(logo_url) payload.logo_url = logo_url;
+  const { error } = await supabase.from('settings').upsert(payload, { onConflict: 'id' });
+  if(error) return toast(error.message);
+  toast('تنظیمات ذخیره شد');
+  loadSettings();
+});
+
+loadCatalog();
+loadSettings();
+refreshSession();
+
+// === Helpers: Modals ===
+function openModal(id){ const el=document.getElementById(id); if(!el) return; el.classList.remove('hidden'); el.classList.add('flex'); }
+function closeModal(id){ const el=document.getElementById(id); if(!el) return; el.classList.add('hidden'); el.classList.remove('flex'); }
+
+// === Datepicker init ===
+function initPersianPicker(selector){
+  if (typeof $ === 'function' && typeof $.fn !== 'undefined' && $.fn.persianDatepicker){
+    $(selector).persianDatepicker({ format: 'YYYY/MM/DD', initialValue: false, autoClose: true });
+  }
+}
+
+// Init loan due picker on page
+document.addEventListener('DOMContentLoaded', ()=>{
+  initPersianPicker('#loan_due');
+});
+
+// === Book edit via modal ===
+let CURRENT_BOOK = null;
+async function editBook(b){ /* replaced by modal version */ return window.editBook(b); }
+
+document.getElementById('formBookModal')?.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const id = parseInt(document.getElementById('mb_id').value, 10);
+  const payload = {
+    title: document.getElementById('mb_title').value.trim(),
+    author: document.getElementById('mb_author').value.trim() || null,
+    translator: document.getElementById('mb_translator').value.trim() || null,
+    published_year: parseInt(document.getElementById('mb_published_year').value,10) || null,
+    pages: parseInt(document.getElementById('mb_pages').value,10) || null,
+    subject: document.getElementById('mb_subject').value.trim() || null,
+    keywords: (document.getElementById('mb_keywords').value||'').split(';').map(s=>s.trim()).filter(Boolean),
+    publisher: document.getElementById('mb_publisher').value.trim() || null,
+    isbn: document.getElementById('mb_isbn').value.trim() || null,
+    total_copies: parseInt(document.getElementById('mb_total_copies').value,10) || 1
+  };
+  const { error } = await supabase.from('books').update(payload).eq('id', id);
+  if(error){ toast(error.message); return; }
+  toast('ویرایش شد');
+  closeModal('modalBook'); loadCatalog(); loadAdminBooks();
+});
+
+// === Member add/edit via modal ===
+function openAddMember(){
+  document.getElementById('modalMemberTitle').textContent = 'افزودن عضو';
+  document.getElementById('mm_id').value = '';
+  ['mm_first_name','mm_last_name','mm_entry_year','mm_degree','mm_student_id','mm_phone','mm_email'].forEach(id=> document.getElementById(id).value='');
+  openModal('modalMember');
+}
+async function editMember(m){ /* replaced by modal version */ return window.editMember(m); }
+
+document.getElementById('formMemberModal')?.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const id = document.getElementById('mm_id').value;
+  const payload = {
+    first_name: document.getElementById('mm_first_name').value.trim() || null,
+    last_name: document.getElementById('mm_last_name').value.trim() || null,
+    entry_year: parseInt(document.getElementById('mm_entry_year').value,10) || null,
+    degree: document.getElementById('mm_degree').value.trim() || null,
+    student_id: document.getElementById('mm_student_id').value.trim() || null,
+    phone: document.getElementById('mm_phone').value.trim() || null,
+    email: document.getElementById('mm_email').value.trim() || null,
+  };
+  if(id){
+    const { error } = await supabase.from('members').update(payload).eq('id', parseInt(id,10));
+    if(error){ toast(error.message); return; }
+    toast('ویرایش شد');
+  }else{
+    const { error } = await supabase.from('members').insert(payload);
+    if(error){ toast(error.message); return; }
+    toast('عضو افزوده شد');
+  }
+  closeModal('modalMember'); loadMembers();
+});
+
+// Replace "افزودن عضو" button handler
+document.getElementById('btnAddMember')?.addEventListener('click', openAddMember);
+
+// === Loan edit via modal & datepickers ===
+async function editLoan(id){
+  const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
+  if(error || !l){ toast('یافت نشد'); return; }
+  document.getElementById('ml_id').value = l.id;
+  // Pre-fill Persian dates
+  try{
+    document.getElementById('ml_borrowed').value = new persianDate(new Date(l.borrowed_at)).format('YYYY/MM/DD');
+  }catch(e){ document.getElementById('ml_borrowed').value=''; }
+  try{
+    document.getElementById('ml_due').value = new persianDate(new Date(l.due_at)).format('YYYY/MM/DD');
+  }catch(e){ document.getElementById('ml_due').value=''; }
+  document.getElementById('ml_renewals').value = (l.renewals_count ?? 0);
+  openModal('modalLoan');
+  initPersianPicker('#ml_borrowed'); initPersianPicker('#ml_due');
+}
+
+document.getElementById('formLoanModal')?.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const id = parseInt(document.getElementById('ml_id').value,10);
+  const b = document.getElementById('ml_borrowed').value.trim();
+  const d = document.getElementById('ml_due').value.trim();
+  const r = parseInt(document.getElementById('ml_renewals').value,10) || 0;
+  let borrowed_at = null, due_at = null;
+  try{ const pb = new persianDate(b.split('/').map(Number)).toGregorian(); borrowed_at = new Date(pb[0], pb[1]-1, pb[2], 12, 0, 0).toISOString(); }catch(e){}
+  try{ const pd = new persianDate(d.split('/').map(Number)).toGregorian(); due_at = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0).toISOString(); }catch(e){}
+  const payload = { renewals_count: r };
+  if(borrowed_at) payload.borrowed_at = borrowed_at;
+  if(due_at) payload.due_at = due_at;
+  const { error } = await supabase.from('loans').update(payload).eq('id', id);
+  if(error){ toast(error.message); return; }
+  toast('به‌روزرسانی شد'); closeModal('modalLoan'); loadLoans();
+});
+
+
+</script>
+
+  <!-- === Modals === -->
+  <!-- Book Modal -->
+  <div id="modalBook" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60">
+    <div class="bg-slate-800 rounded-2xl p-5 w-full max-w-2xl">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-bold" id="modalBookTitle">ویرایش کتاب</h3>
+        <button class="px-2 py-1 rounded-lg bg-slate-700" onclick="closeModal('modalBook')">✕</button>
+      </div>
+      <form id="formBookModal" class="grid md:grid-cols-3 gap-4">
+        <input type="hidden" id="mb_id" />
+        <div class="md:col-span-3"><label>عنوان *</label><input id="mb_title" class="rounded-xl px-3 py-2 w-full" required /></div>
+        <div><label>نویسنده</label><input id="mb_author" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div><label>مترجم</label><input id="mb_translator" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div><label>سال انتشار</label><input id="mb_published_year" type="number" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div><label>تعداد صفحات</label><input id="mb_pages" type="number" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div class="md:col-span-3"><label>موضوع</label><input id="mb_subject" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div class="md:col-span-3"><label>کلیدواژه‌ها (با ; جدا کنید)</label><input id="mb_keywords" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div class="md:col-span-2"><label>انتشارات</label><input id="mb_publisher" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div><label>کد/ISBN</label><input id="mb_isbn" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div><label>تعداد نسخه</label><input id="mb_total_copies" type="number" min="1" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div class="md:col-span-3 mt-2">
+          <button class="px-4 py-2 rounded-xl bg-emerald-600" type="submit">ذخیره</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Member Modal -->
+  <div id="modalMember" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60">
+    <div class="bg-slate-800 rounded-2xl p-5 w-full max-w-xl">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-bold" id="modalMemberTitle">ویرایش عضو</h3>
+        <button class="px-2 py-1 rounded-lg bg-slate-700" onclick="closeModal('modalMember')">✕</button>
+      </div>
+      <form id="formMemberModal" class="grid md:grid-cols-2 gap-4">
+        <input type="hidden" id="mm_id" />
+        <div><label>نام</label><input id="mm_first_name" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div><label>نام خانوادگی</label><input id="mm_last_name" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div><label>سال ورود</label><input id="mm_entry_year" type="number" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div><label>مقطع تحصیلی</label><input id="mm_degree" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div><label>شماره دانشجویی</label><input id="mm_student_id" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div><label>شماره تلفن</label><input id="mm_phone" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div class="md:col-span-2"><label>ایمیل</label><input id="mm_email" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div class="md:col-span-2 mt-2">
+          <button class="px-4 py-2 rounded-xl bg-emerald-600" type="submit">ذخیره</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Loan Modal -->
+  <div id="modalLoan" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60">
+    <div class="bg-slate-800 rounded-2xl p-5 w-full max-w-xl">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-bold">ویرایش امانت</h3>
+        <button class="px-2 py-1 rounded-lg bg-slate-700" onclick="closeModal('modalLoan')">✕</button>
+      </div>
+      <form id="formLoanModal" class="grid md:grid-cols-2 gap-4">
+        <input type="hidden" id="ml_id" />
+        <div><label>تاریخ امانت (هجری شمسی)</label><input id="ml_borrowed" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div><label>تاریخ سررسید (هجری شمسی)</label><input id="ml_due" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div class="md:col-span-2"><label>تعداد تمدیدها</label><input id="ml_renewals" type="number" min="0" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div class="md:col-span-2 mt-2">
+          <button class="px-4 py-2 rounded-xl bg-emerald-600" type="submit">ذخیره</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+<script>
+// ---------- Robust Persian datepicker binding ----------
+(function(){
+  function ready(){ return window.jQuery && jQuery.fn && jQuery.fn.persianDatepicker; }
+  function bindOnce(selector){
+    if(!ready()) return false;
+    try{
+      jQuery(selector).each(function(){
+        if(this.dataset.pdBound==='1') return;
+        jQuery(this).persianDatepicker({ format:'YYYY/MM/DD', initialValue:false, autoClose:true });
+        this.dataset.pdBound='1';
+      });
+      return true;
+    }catch(e){ console.error('persian bind', e); }
+    return false;
+  }
+  function retryBind(selector, tries=20, delay=150){
+    let n=0; (function tick(){ if(bindOnce(selector) || n++>=tries) return; setTimeout(tick, delay); })();
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    retryBind('#loan_due');
+    const el = document.getElementById('loan_due');
+    if(el) el.addEventListener('focus', ()=>bindOnce('#loan_due'));
+    document.querySelectorAll('[data-tab="admin-loans"]').forEach(btn=>{
+      btn.addEventListener('click', ()=> setTimeout(()=>retryBind('#loan_due'), 50));
+    });
+  });
+  const mo = new MutationObserver(()=>{
+    bindOnce('input[id^="ml_borrowed"]');
+    bindOnce('input[id^="ml_due"]');
+  });
+  document.addEventListener('DOMContentLoaded', ()=> mo.observe(document.body, {childList:true, subtree:true}));
+  const _origOpen = window.openLoanModal;
+  window.openLoanModal = function(l, opts){
+    if(typeof _origOpen === 'function'){ _origOpen(l, opts); }
+    setTimeout(()=>{
+      bindOnce('input[id^="ml_borrowed"]');
+      bindOnce('input[id^="ml_due"]');
+    }, 0);
+  };
+})();
+
+// ---------- Edit book & member implementations ----------
+window.editBook = async function(input){
+  try{
+    let b = input;
+    if(typeof input === 'number'){
+      const { data, error } = await supabase.from('books').select('*').eq('id', input).maybeSingle();
+      if(error || !data){ toast('کتاب یافت نشد'); return; }
+      b = data;
+    }
+    document.getElementById('modalBookTitle').textContent = 'ویرایش کتاب';
+    document.getElementById('mb_id').value = b.id || '';
+    document.getElementById('mb_title').value = b.title || '';
+    document.getElementById('mb_author').value = b.author || '';
+    document.getElementById('mb_translator').value = b.translator || '';
+    document.getElementById('mb_subject').value = b.subject || '';
+    document.getElementById('mb_keywords').value = Array.isArray(b.keywords) ? b.keywords.join(';') : (b.keywords || '');
+    document.getElementById('mb_publisher').value = b.publisher || '';
+    document.getElementById('mb_isbn').value = b.isbn || '';
+    document.getElementById('mb_published_year').value = b.published_year || '';
+    document.getElementById('mb_pages').value = b.pages || '';
+    document.getElementById('mb_total_copies').value = b.total_copies || 1;
+    openModal('modalBook');
+  }catch(e){ console.error(e); toast('خطا در ویرایش کتاب'); }
+};
+
+window.editMember = async function(input){
+  try{
+    let m = input;
+    if(typeof input === 'number'){
+      const { data, error } = await supabase.from('members').select('*').eq('id', input).maybeSingle();
+      if(error || !data){ toast('عضو یافت نشد'); return; }
+      m = data;
+    }
+    document.getElementById('modalMemberTitle').textContent = 'ویرایش عضو';
+    document.getElementById('mm_id').value = m.id || '';
+    document.getElementById('mm_first_name').value = m.first_name || '';
+    document.getElementById('mm_last_name').value = m.last_name || '';
+    document.getElementById('mm_entry_year').value = m.entry_year || '';
+    document.getElementById('mm_degree').value = m.degree || '';
+    document.getElementById('mm_student_id').value = m.student_id || '';
+    document.getElementById('mm_phone').value = m.phone || '';
+    document.getElementById('mm_email').value = m.email || '';
+    openModal('modalMember');
+  }catch(e){ console.error(e); toast('خطا در ویرایش عضو'); }
+};
+
+// ---------- Prevent refresh & persist forms ----------
+document.addEventListener('DOMContentLoaded', function(){
+  const fb = document.getElementById('formBookModal');
+  if(fb && !fb.dataset.bound){
+    fb.addEventListener('submit', async function(e){
+      e.preventDefault();
+      try{
+        const id = parseInt(document.getElementById('mb_id').value,10);
+        const payload = {
+          title: document.getElementById('mb_title').value.trim(),
+          author: document.getElementById('mb_author').value.trim() || null,
+          translator: document.getElementById('mb_translator').value.trim() || null,
+          subject: document.getElementById('mb_subject').value.trim() || null,
+          keywords: (document.getElementById('mb_keywords').value||'').split(';').map(s=>s.trim()).filter(Boolean),
+          publisher: document.getElementById('mb_publisher').value.trim() || null,
+          isbn: document.getElementById('mb_isbn').value.trim() || null,
+          published_year: parseInt(document.getElementById('mb_published_year').value,10) || null,
+          pages: parseInt(document.getElementById('mb_pages').value,10) || null,
+          total_copies: parseInt(document.getElementById('mb_total_copies').value,10) || 1,
+        };
+        const { error } = await supabase.from('books').update(payload).eq('id', id);
+        if(error) return toast(error.message);
+        toast('کتاب به‌روزرسانی شد'); closeModal('modalBook');
+        if(typeof loadCatalog==='function') loadCatalog();
+        if(typeof loadAdminBooks==='function') loadAdminBooks();
+      }catch(err){ console.error(err); toast('خطا در ذخیره کتاب'); }
+    });
+    fb.dataset.bound = '1';
+  }
+
+  const fm = document.getElementById('formMemberModal');
+  if(fm && !fm.dataset.bound){
+    fm.addEventListener('submit', async function(e){
+      e.preventDefault();
+      try{
+        const id = parseInt(document.getElementById('mm_id').value,10);
+        const payload = {
+          first_name: document.getElementById('mm_first_name').value.trim() || null,
+          last_name: document.getElementById('mm_last_name').value.trim() || null,
+          entry_year: parseInt(document.getElementById('mm_entry_year').value,10) || null,
+          degree: document.getElementById('mm_degree').value.trim() || null,
+          student_id: document.getElementById('mm_student_id').value.trim() || null,
+          phone: document.getElementById('mm_phone').value.trim() || null,
+          email: document.getElementById('mm_email').value.trim() || null,
+        };
+        const { error } = await supabase.from('members').update(payload).eq('id', id);
+        if(error) return toast(error.message);
+        toast('عضو به‌روزرسانی شد'); closeModal('modalMember');
+        if(typeof loadMembers==='function') loadMembers();
+      }catch(err){ console.error(err); toast('خطا در ذخیره عضو'); }
+    });
+    fm.dataset.bound = '1';
+  }
+});
+</script>
+
+
+<script>
+/* ======== Robust loader for persian-date ======== */
+(function ensurePersianDateReady(){
+  function ready(){ return typeof window.persianDate === 'function'; }
+  function loadScript(cb){
+    var s = document.createElement('script');
+    s.src = "https://cdn.jsdelivr.net/npm/persian-date@1.2.0/dist/persian-date.js";
+    s.onload = cb;
+    document.head.appendChild(s);
+  }
+  function boot(){
+    if(!ready()){ try{ loadScript(after); }catch(e){ setTimeout(boot, 500); } return; }
+    after();
+  }
+  function after(){
+    if(!ready()){ setTimeout(after, 150); return; }
+    try{
+      if(window.__pd_booted) return;
+      window.__pd_booted = true;
+      // Re-init loan form and modal pickers after persianDate is guaranteed
+      if(typeof initLoanForm === 'function'){ initLoanForm(); }
+    }catch(e){}
+  }
+  if(!ready()){ boot(); }
+})();
+</script>
+</body>
+</html>
