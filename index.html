@@ -9,10 +9,10 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/persian-datepicker@1.2.0/dist/css/persian-datepicker.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@babakhani/persian-datepicker@1.2.0/dist/css/persian-datepicker.min.css">
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/persian-date@1.2.0/dist/persian-date.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/persian-datepicker@1.2.0/dist/js/persian-datepicker.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babakhani/persian-date@1.1.0/dist/persian-date.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babakhani/persian-datepicker@1.2.0/dist/js/persian-datepicker.js"></script>
   <style>
     html, body { height: 100%; background: #0b1020; }
     .glass { background: rgba(255,255,255,0.06); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.08); }
@@ -901,7 +901,7 @@ document.addEventListener('DOMContentLoaded', function(){
   function ready(){ return typeof window.persianDate === 'function'; }
   function loadScript(cb){
     var s = document.createElement('script');
-    s.src = "https://cdn.jsdelivr.net/npm/persian-date@1.2.0/dist/persian-date.js";
+    s.src = "https://cdn.jsdelivr.net/npm/@babakhani/persian-date@1.1.0/dist/persian-date.js";
     s.onload = cb;
     document.head.appendChild(s);
   }
@@ -922,147 +922,46 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
-<!-- ==== FIX v4: Self-contained Jalali datepicker (no external CDN) ==== -->
-<style>
-  .jp-picker{position:absolute;background:#111827;border:1px solid #374151;border-radius:.75rem;box-shadow:0 10px 25px rgba(0,0,0,.35);padding:.5rem;z-index:99999;direction:rtl;font-family:inherit;color:#e5e7eb}
-  .jp-header{display:flex;align-items:center;justify-content:space-between;padding:.25rem .5rem;margin-bottom:.25rem}
-  .jp-nav{display:flex;gap:.25rem;align-items:center}
-  .jp-btn{cursor:pointer;border:1px solid #374151;border-radius:.5rem;padding:.15rem .4rem;background:#1f2937;user-select:none}
-  .jp-grid{display:grid;grid-template-columns:repeat(7,2.2rem);gap:.15rem;justify-items:center}
-  .jp-cell{width:2.2rem;height:2rem;display:flex;align-items:center;justify-content:center;border-radius:.5rem;cursor:pointer}
-  .jp-cell.jp-out{opacity:.35}
-  .jp-cell:hover{background:#374151}
-  .jp-cell.jp-selected{background:#2563eb;color:white}
-  .jp-week{opacity:.7;font-size:.85em}
-</style>
 <script>
-(function(){
-  // --- Jalaali conversion (based on jalaali-js) ---
-  function div(a,b){return ~~(a/b)}
-  function gregorianToJdn(gy,gm,gd){
-    var a=div(14-gm,12),y=gy+4800-a,m=gm+12*a-3;
-    return gd+div(153*m+2,5)+365*y+div(y,4)-div(y,100)+div(y,400)-32045;
+// Init Persian pickers on page (both borrowed & due) + button handlers
+document.addEventListener('DOMContentLoaded', ()=>{
+  function bindPickers(){
+    try{
+      if (typeof $ === 'function' && $.fn && $.fn.persianDatepicker){
+        ['#loan_borrowed', '#loan_due'].forEach(sel=>{
+          const $el = $(sel);
+          if($el.length && !$el.data('pdbound')){
+            $el.persianDatepicker({ format:'YYYY/MM/DD', initialValue:false, autoClose:true });
+            $el.data('pdbound', 1);
+          }
+        });
+        const map = [
+          ['btn_open_borrowed', '#loan_borrowed'],
+          ['btn_open_due', '#loan_due']
+        ];
+        map.forEach(([btnId, inputSel])=>{
+          const btn = document.getElementById(btnId);
+          const input = document.querySelector(inputSel);
+          if(btn && input && !btn.dataset.bound){
+            btn.addEventListener('click', ()=>{
+              try { $(inputSel).persianDatepicker('show'); } catch(e){}
+              input.focus(); input.click();
+              const ev = new MouseEvent('mousedown', {bubbles:true, cancelable:true, view:window});
+              input.dispatchEvent(ev);
+            });
+            btn.dataset.bound = '1';
+          }
+        });
+      }
+    }catch(e){ console.error('picker bind error', e); }
   }
-  function jdnToGregorian(j){
-    var f=j+1401+div(div(4*j+274277,146097)*3,4)-38;
-    var e=4*f+3;
-    var g=div(e%1461,4);
-    var h=5*g+2;
-    var D=div(h%153,5)+1;
-    var M=((div(h,153)+2)%12)+1;
-    var Y=div(e,1461)-4716+div(12+2-M,12);
-    return {gy:Y, gm:M, gd:D};
+  bindPickers();
+  const loansTab = document.getElementById('tab-admin-loans');
+  if(loansTab){
+    const mo = new MutationObserver(()=> bindPickers());
+    mo.observe(loansTab, { attributes:true, attributeFilter:['class'] });
   }
-  function jalaliToJdn(jy,jm,jd){
-    var epbase = jy-474; var epyear = 474+ (epbase%2820);
-    return jd + (jm<=7 ? (jm-1)*31 : (jm-7)*30+186)
-           + div((epyear*682-110),2816) + (epyear-1)*365
-           + div(epbase,2820)*1029983 + (1948320.5-1);
-  }
-  function jdnToJalali(j){
-    j = Math.floor(j)+0.5;
-    var depoch = j - jalaliToJdn(475,1,1);
-    var cycle = div(depoch,1029983);
-    var cyear = depoch % 1029983;
-    var ycycle;
-    if(cyear==1029982){ ycycle = 2820; }
-    else{
-      var aux1 = div(cyear,366);
-      var aux2 = cyear % 366;
-      ycycle = div(2134*aux1+2816*aux2+2815,1028522) + aux1 + 1;
-    }
-    var jy = ycycle + 2820*cycle + 475;
-    if(jy<=0) jy--;
-    var yday = j - jalaliToJdn(jy,1,1)+1;
-    var jm = (yday<=186)? Math.ceil(yday/31) : Math.ceil((yday-186)/30)+6;
-    var jd = j - jalaliToJdn(jy,jm,1)+1;
-    return {jy:jy,jm:jm,jd:jd};
-  }
-  function toJalali(gy,gm,gd){ return jdnToJalali(gregorianToJdn(gy,gm,gd)); }
-  function toGregorian(jy,jm,jd){ return jdnToGregorian(jalaliToJdn(jy,jm,jd)); }
-
-  // --- Utilities ---
-  const months = ["فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند"];
-  const week = ["ش","ی","د","س","چ","پ","ج"];
-  function pad(n){ return (n<10? "0"+n : ""+n); }
-  function iranNow(){
-    const now = new Date();
-    const j = toJalali(now.getFullYear(), now.getMonth()+1, now.getDate());
-    return {jy:j.jy, jm:j.jm, jd:j.jd};
-  }
-
-  function createPicker(){
-    const root = document.createElement('div'); root.className='jp-picker'; root.style.display='none';
-    const header = document.createElement('div'); header.className='jp-header';
-    const title = document.createElement('div'); title.style.fontWeight='600';
-    const nav = document.createElement('div'); nav.className='jp-nav';
-    const prev = document.createElement('div'); prev.className='jp-btn'; prev.textContent='‹';
-    const next = document.createElement('div'); next.className='jp-btn'; next.textContent='›';
-    nav.appendChild(prev); nav.appendChild(next);
-    header.appendChild(nav); header.appendChild(title);
-    const grid = document.createElement('div'); grid.className='jp-grid';
-    week.forEach(w=>{ const c=document.createElement('div'); c.textContent=w; c.className='jp-week'; grid.appendChild(c); });
-    root.appendChild(header); root.appendChild(grid);
-    document.body.appendChild(root);
-    return {root, title, grid, prev, next};
-  }
-
-  function render(grid, y, m, selected, cb){
-    // clear old
-    while(grid.children.length>7) grid.removeChild(grid.lastChild);
-    // what weekday is day 1?
-    const gStart = toGregorian(y,m,1);
-    const d0 = new Date(gStart.gy, gStart.gm-1, gStart.gd);
-    let w = (d0.getDay()+1)%7; // start Sunday->0 ; we want Sh(0)
-    // days in month
-    const daysInMonth = (m<=6?31:(m<=11?30:( ( ( ( ( (y- (y>0? 474:473))%2820)+474 )*682)%2816) < 682 && m==12 ? 30 : 29 ))); // Esfand 29/30 heuristic using leap check
-    // prev month days to fill
-    const prevMonth = m==1?12:m-1;
-    const prevYear = m==1? y-1 : y;
-    const prevDays = prevMonth<=6?31:(prevMonth<=11?30: ( (( ((prevYear- (prevYear>0? 474:473))%2820)+474)*682)%2816) < 682 ? 30 : 29 );
-    for(let i=0;i<w;i++){
-      const c=document.createElement('div'); c.className='jp-cell jp-out'; c.textContent = prevDays - (w-1-i);
-      grid.appendChild(c);
-    }
-    for(let d=1; d<=daysInMonth; d++){
-      const c=document.createElement('div'); c.className='jp-cell'; c.textContent = d;
-      if(selected && selected.jd==d && selected.jm==m && selected.jy==y){ c.classList.add('jp-selected'); }
-      c.addEventListener('click', ()=> cb({jy:y,jm:m,jd:d}));
-      grid.appendChild(c);
-    }
-    // fill tail
-    while(grid.children.length%7!=0){
-      const c=document.createElement('div'); c.className='jp-cell jp-out'; c.textContent = (grid.children.length%7)+1;
-      grid.appendChild(c);
-    }
-  }
-
-  function attach(inputSel, buttonId){
-    const picker = createPicker();
-    let state = iranNow();
-    let selected = null;
-    function update(){ picker.title.textContent = months[state.jm-1] + ' ' + state.jy; render(picker.grid, state.jy, state.jm, selected, picked); }
-    function picked(j){ selected = j; const v = j.jy + '/' + pad(j.jm) + '/' + pad(j.jd); const el=document.querySelector(inputSel); if(el){ el.value=v; el.dispatchEvent(new Event('input',{bubbles:true})); } hide(); }
-    function show(anchor){
-      const rect = anchor.getBoundingClientRect();
-      picker.root.style.left = (window.scrollX + rect.left) + 'px';
-      picker.root.style.top  = (window.scrollY + rect.bottom + 6) + 'px';
-      picker.root.style.display='block'; update();
-    }
-    function hide(){ picker.root.style.display='none'; }
-    picker.prev.addEventListener('click', ()=>{ state.jm--; if(state.jm<1){ state.jm=12; state.jy--; } update(); });
-    picker.next.addEventListener('click', ()=>{ state.jm++; if(state.jm>12){ state.jm=1; state.jy++; } update(); });
-    document.addEventListener('click', (e)=>{ if(!picker.root.contains(e.target)){ hide(); } });
-    const btn = document.getElementById(buttonId); const input = document.querySelector(inputSel);
-    if(btn){ btn.addEventListener('click', (e)=>{ e.preventDefault(); show(btn); }); }
-    if(input){ input.addEventListener('focus', ()=> show(input)); input.addEventListener('click', ()=> show(input)); }
-  }
-
-  document.addEventListener('DOMContentLoaded', function(){
-    attach('#loan_borrowed','btn_open_borrowed');
-    attach('#loan_due','btn_open_due');
-  });
-})();
+});
 </script>
 
 </body>
