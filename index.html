@@ -18,57 +18,137 @@
     label { font-size: 12px; color: rgba(226,232,240,.8); }
   </style>
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/flatpickr.min.css">
-
 
 <style>
-  /* Loans rewrite v2 */
-  .loan-section{margin-top:1rem}
-  .loan-list{display:flex;flex-direction:column;gap:.5rem}
-  .loan-card{display:flex;align-items:center;justify-content:space-between;gap:.75rem;border:1px solid #334155;border-radius:.75rem;padding:.6rem .8rem;background:#0b1220}
-  .loan-card .meta{display:flex;flex-direction:column;font-size:.9rem}
-  .loan-card .actions{display:flex;gap:.35rem}
-  .btn{border:1px solid #475569;border-radius:.5rem;padding:.3rem .7rem;cursor:pointer;background:#111827}
-  .btn:hover{background:#1f2937}
-  .btn.warn{border-color:#f59e0b;background:#3b2f14}
-  .btn.danger{border-color:#ef4444;background:#3b171a}
-  .overdue-wrap{border:1px dashed #f59e0b;background:#231b0b;padding:.8rem;border-radius:.75rem;margin:1rem 0}
-  .overdue-title{color:#f59e0b;font-weight:700;margin-bottom:.3rem}
-
-  /* Modal */
-  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:100000}
-  .modal{background:#0f172a;border:1px solid #334155;border-radius:.9rem;min-width:320px;max-width:520px;width:92%;padding:1rem}
-  .modal h4{margin:0 0 .75rem 0}
-  .modal .row{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin:.5rem 0}
-  .modal label{font-size:.85rem;opacity:.9}
-  .modal input[type="text"]{width:100%;border:1px solid #334155;background:#0b1220;color:#e5e7eb;border-radius:.5rem;padding:.4rem .5rem}
-  .modal .actions{display:flex;gap:.4rem;justify-content:flex-end;margin-top:.75rem}
+  /* Minimal Jalali picker */
+  .jalali-picker{position:absolute;z-index:60;background:#0f172a;border:1px solid rgba(255,255,255,.15);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:8px;min-width:260px}
+  .jp-head{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#cbd5e1;margin-bottom:6px}
+  .jp-head button{background:#1f2937;border:1px solid rgba(255,255,255,.1);color:#e2e8f0;border-radius:8px;padding:2px 6px}
+  .jp-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .jp-cell{font-size:12px;text-align:center;padding:6px 0;border-radius:8px;cursor:pointer}
+  .jp-cell.jp-dow{opacity:.7;cursor:default}
+  .jp-cell:hover{background:rgba(255,255,255,.08)}
+  .jp-cell.jp-today{outline:1px dashed rgba(255,255,255,.25)}
+  .jp-cell.jp-selected{background:#2563eb}
+  .date-input-wrap{display:flex;gap:6px;align-items:center}
+  .date-btn{background:#1f2937;border:1px solid rgba(255,255,255,.12);border-radius:10px;align-items:center;justify-content:center}
 </style>
+<script>
+/* ===== Lightweight Jalali picker (requires window.persianDate) ===== */
+(function(){
+  function fmtYMD(pd){ try{ return new persianDate(pd).format('YYYY/MM/DD'); }catch(e){ return ''; } }
+  function parseYMD(str){
+    if(!str) return null;
+    var p = str.split('/').map(function(x){ return parseInt(x,10)||0; });
+    if(p.length!==3 || !p[0]||!p[1]||!p[2]) return null;
+    return {year:p[0], month:p[1], day:p[2]};
+  }
+  function pdFromParts(parts){ return new persianDate([parts.year, parts.month, parts.day]); }
 
+  function buildPicker(input){
+    var anchor = input.getBoundingClientRect();
+    var root = document.createElement('div');
+    root.className = 'jalali-picker';
+    root.style.top = (window.scrollY + anchor.bottom + 6) + 'px';
+    root.style.left = (window.scrollX + anchor.left) + 'px';
 
-<style>
-/* Loans scoped styles v3 */
-#loanMount { margin-top: 1rem; }
-#loanMount .loan-list{display:flex;flex-direction:column;gap:.5rem}
-#loanMount .loan-card{display:flex;align-items:center;justify-content:space-between;gap:.75rem;border:1px solid #334155;border-radius:.75rem;padding:.6rem .8rem;background:#0b1220}
-#loanMount .meta{display:flex;flex-direction:column;font-size:.9rem}
-#loanMount .actions{display:flex;gap:.4rem}
-#loanMount .btn{border:1px solid #475569;border-radius:.5rem;padding:.35rem .75rem;cursor:pointer;background:#111827}
-#loanMount .btn:hover{background:#1f2937}
-#loanMount .btn.warn{border-color:#f59e0b;background:#3b2f14}
-#loanMount .btn.danger{border-color:#ef4444;background:#3b171a}
-#loanMount .overdue-box{border:1px dashed #f59e0b;background:#231b0b;padding:.8rem;border-radius:.75rem;margin:1rem 0}
-#loanMount .overdue-title{color:#f59e0b;font-weight:700;margin-bottom:.3rem}
+    var sel = parseYMD(input.value) || (function(){ var t = new persianDate(new Date()); return {year:t.year(), month:t.month(), day:t.date()}; })();
+    var currentYear = sel.year, currentMonth = sel.month, selected = {y:sel.year,m:sel.month,d:sel.day};
 
-/* Modal */
-#loanModalBackdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:100000}
-#loanModal{background:#0f172a;border:1px solid #334155;border-radius:.9rem;min-width:340px;max-width:560px;width:92%;padding:1rem}
-#loanModal h4{margin:0 0 .75rem 0}
-#loanModal .row{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin:.5rem 0}
-#loanModal label{font-size:.85rem;opacity:.9}
-#loanModal input[type="text"]{width:100%;border:1px solid #334155;background:#0b1220;color:#e5e7eb;border-radius:.5rem;padding:.45rem .55rem}
-#loanModal .actions{display:flex;gap:.5rem;justify-content:flex-end;margin-top:.9rem}
-</style>
+    function render(){
+      root.innerHTML = '';
+      var head = document.createElement('div'); head.className='jp-head';
+      var title = document.createElement('div'); title.textContent = new persianDate([currentYear,currentMonth,1]).format('MMMM YYYY');
+      var left = document.createElement('button'); left.type='button'; left.textContent='◀';
+      var right = document.createElement('button'); right.type='button'; right.textContent='▶';
+      left.onclick = function(){ currentMonth--; if(currentMonth<1){ currentMonth=12; currentYear--; } render(); };
+      right.onclick = function(){ currentMonth++; if(currentMonth>12){ currentMonth=1; currentYear++; } render(); };
+      head.appendChild(left); head.appendChild(title); head.appendChild(right);
+      root.appendChild(head);
+
+      var grid = document.createElement('div'); grid.className='jp-grid';
+      var dows = ['ش','ی','د','س','چ','پ','ج'];
+      dows.forEach(function(n){ var c=document.createElement('div'); c.textContent=n; c.className='jp-cell jp-dow'; grid.appendChild(c); });
+
+      // First weekday index (0..6) for first day of month
+      var first = new persianDate([currentYear,currentMonth,1]).toDate(); // gregorian Date
+      var w = (first.getDay()+1)%7; // shift to start from Saturday
+      for(var i=0;i<w;i++){ var emp=document.createElement('div'); grid.appendChild(emp); }
+
+      var dim = new persianDate([currentYear,currentMonth,1]).daysInMonth();
+      var today = new persianDate(new Date());
+      for(var d=1; d<=dim; d++){
+        (function(day){
+          var cell = document.createElement('div'); cell.className='jp-cell'; cell.textContent=day;
+          if(day===today.date() && currentMonth===today.month() && currentYear===today.year()) cell.classList.add('jp-today');
+          if(day===selected.d && currentMonth===selected.m && currentYear===selected.y) cell.classList.add('jp-selected');
+          cell.onclick = function(){
+            selected = {y:currentYear,m:currentMonth,d:day};
+            input.value = fmtYMD([selected.y,selected.m,selected.d]);
+            close();
+            input.dispatchEvent(new Event('change'));
+          };
+          grid.appendChild(cell);
+        })(d);
+      }
+      root.appendChild(grid);
+    }
+
+    function close(){
+      if(root && root.parentNode){ document.body.removeChild(root); document.removeEventListener('click', onDoc); window.removeEventListener('resize', close); }
+    }
+    function onDoc(e){ if(!root.contains(e.target) && e.target!==input) close(); }
+
+    render();
+    document.body.appendChild(root);
+    setTimeout(function(){ document.addEventListener('click', onDoc); window.addEventListener('resize', close); }, 0);
+    return {close:close};
+  }
+
+  window.bindJalaliPicker = function(input, btn){
+    var open = null;
+    function show(){
+      if(open){ open.close(); open=null; }
+      open = buildPicker(input);
+    }
+    if(btn){
+      btn.addEventListener('click', function(ev){ ev.preventDefault(); show(); });
+    }else{
+      input.addEventListener('focus', show);
+    }
+  };
+
+  // Helper to set defaults & conversion
+  window.initLoanForm = async function(){
+    try{
+      // Fetch settings
+      var defDays = 14, renewDays = 7;
+      try{
+        const { data } = await supabase.from('settings').select('default_loan_days, default_renew_days').eq('id',1).maybeSingle();
+        if(data && typeof data.default_loan_days === 'number') defDays = data.default_loan_days;
+        if(data && typeof data.default_renew_days === 'number') renewDays = data.default_renew_days;
+      }catch(e){}
+
+      var nowPd = new persianDate(new Date());
+      var borrowedInput = document.getElementById('loan_borrowed');
+      var dueInput = document.getElementById('loan_due');
+      if(borrowedInput && !borrowedInput.value){ borrowedInput.value = nowPd.format('YYYY/MM/DD'); }
+      if(dueInput && !dueInput.value){
+        var g = new Date(); g.setDate(g.getDate() + defDays);
+        dueInput.value = new persianDate(g).format('YYYY/MM/DD');
+      }
+
+      var btnB = document.getElementById('btn_open_borrowed');
+      var btnD = document.getElementById('btn_open_due');
+      if(borrowedInput){ bindJalaliPicker(borrowedInput, btnB); }
+      if(dueInput){ bindJalaliPicker(dueInput, btnD); }
+
+      // store for renew defaults
+      window.__DEFAULT_RENEW_DAYS__ = renewDays;
+    }catch(e){ console.error(e); }
+  };
+})();
+</script>
 
 </head>
 <body class="text-slate-100">
@@ -99,13 +179,7 @@
         <div class="text-sm text-slate-300/80">تعداد: <span class="px-2 py-1 rounded-lg chip" id="catalogCount">—</span></div>
       </div>
       <div id="catalogList" class="grid lg:grid-cols-2 gap-3"></div>
-    
-<div class="loan-section">
-    <div class="loan-header"><div>امانت‌های فعال</div></div>
-    </div>
-</div>
-
-</section>
+    </section>
 
     <section id="adminShell" class="hidden">
       <div class="flex flex-wrap gap-2 mb-4">
@@ -504,97 +578,44 @@ $('#loan_book_query')?.addEventListener('input', async (e)=>{
 });
 
 async function loadLoans(){
-  const { data, error } = await supabase.from('loans').select('id,borrowed_at,due_at,returned_at, renewals_count, members:member_id(first_name,last_name), books:book_id(title), admins:issued_by_admin_id(full_name)').is('returned_at', null).order('borrowed_at',{ascending:false});
+  const { data, error } = await supabase
+    .from('loans')
+    .select('id,book_id,member_id,borrowed_at,due_at,returned_at,renewals_count, members:member_id(first_name,last_name), books:book_id(title), admins:issued_by_admin_id(full_name)')
+    .is('returned_at', null)
+    .order('borrowed_at',{ascending:false});
   if(error) return toast(error.message);
-  $('#loanList').innerHTML = (data||[]).map(l=>`
+
+  const now = new Date();
+  const overdue = [];
+  const active = [];
+  (data||[]).forEach(l=>{
+    if(new Date(l.due_at) < now) overdue.push(l); else active.push(l);
+  });
+
+  function card(l){
+    const name = ((l.members?.first_name||'')+' '+(l.members?.last_name||'')).trim() || '—';
+    return `
     <div class="glass rounded-2xl p-4 space-y-2">
       <div class="flex items-center justify-between">
         <div>
           <div class="font-bold">${l.books?.title||'—'}</div>
-          <div class="text-xs text-slate-300">مسئول: ${l.admins?.full_name||'—'} • امانت‌گیرنده: ${(l.members?.first_name||'')+' '+(l.members?.last_name||'')}</div>
-          <div class="text-xs text-slate-400">تاریخ امانت: ${fmtDate(l.borrowed_at)} • سررسید: ${fmtDate(l.due_at)} • تمدیدها: ${l.renewals_count ?? 0}</div>
+          <div class="text-xs text-slate-300">مسئول: ${l.admins?.full_name||'—'} • امانت‌گیرنده: ${name}</div>
+          <div class="text-xs text-slate-400">تاریخ امانت: ${new persianDate(new Date(l.borrowed_at)).format('YYYY/MM/DD')} • سررسید: ${new persianDate(new Date(l.due_at)).format('YYYY/MM/DD')} • تمدیدها: ${l.renewals_count ?? 0}</div>
         </div>
         <div class="flex gap-2">
-          <button class="px-3 py-1 rounded-lg bg-slate-600" onclick="editLoan(${l.id})">ویرایش</button>
+          <button class="px-3 py-1 rounded-lg bg-slate-600" onclick="openLoanEdit(${l.id})">ویرایش</button>
+          <button class="px-3 py-1 rounded-lg bg-indigo-600" onclick="renewLoan(${l.id})">تمدید</button>
           <button class="px-3 py-1 rounded-lg bg-amber-600" onclick="returnLoan(${l.id})">بازگشت</button>
         </div>
       </div>
-    </div>`).join('');
-}
-async function editLoan(id){
-  const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
-  if(error || !l) { toast('یافت نشد'); return; }
-  const b = prompt('تاریخ امانت (YYYY/MM/DD - شمسی)', new persianDate(new Date(l.borrowed_at)).format('YYYY/MM/DD'));
-  const d = prompt('تاریخ سررسید (YYYY/MM/DD - شمسی)', new persianDate(new Date(l.due_at)).format('YYYY/MM/DD'));
-  const r = parseInt(prompt('تعداد تمدیدها', l.renewals_count ?? 0) || '0', 10);
-  let borrowed_at = l.borrowed_at, due_at = l.due_at;
-  try{ const pb = new persianDate(b.split('/').map(Number)).toGregorian(); borrowed_at = new Date(pb[0], pb[1]-1, pb[2], 12, 0, 0).toISOString(); }catch(e){}
-  try{ const pd = new persianDate(d.split('/').map(Number)).toGregorian(); due_at = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0).toISOString(); }catch(e){}
-  const { error: e2 } = await supabase.from('loans').update({ borrowed_at, due_at, renewals_count: r }).eq('id', id);
-  if(e2) return toast(e2.message); toast('به‌روزرسانی شد'); loadLoans();
-}
-async function returnLoan(id){
-  const { data, error } = await supabase.rpc('return_loan', { p_loan_id: id });
-  if (error) { toast(error.message || 'خطا در ثبت بازگشت'); return; }
-  toast('بازگشت ثبت شد'); loadCatalog(); loadLoans();
-}
+    </div>`;
+  }
 
-async function readSheet(file){
-  return new Promise((resolve,reject)=>{
-    const reader = new FileReader();
-    reader.onload = e=>{ const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'}); const ws = wb.Sheets[wb.SheetNames[0]]; const rows = XLSX.utils.sheet_to_json(ws, {defval:''}); resolve(rows); };
-    reader.onerror = reject; reader.readAsArrayBuffer(file);
-  });
-}
-$('#btnImportMembers')?.addEventListener('click', async ()=>{
-  const f = $('#fileMembers').files?.[0]; if(!f) return toast('فایل انتخاب نشده');
-  const rows = await readSheet(f);
-  const mapped = rows.map(r=>({
-    first_name: r.first_name||r['first name']||r['نام']||null,
-    last_name: r.last_name||r['last name']||r['نام خانوادگی']||null,
-    entry_year: parseInt(r.entry_year||r['entry year']||r['سال ورود'])||null,
-    degree: r.degree||r['مقطع']||null,
-    student_id: (r.student_id||r['student id']||r['شماره دانشجویی']||'').toString()||null,
-    phone: (r.phone||r['شماره تلفن']||'').toString()||null,
-    email: r.email||r['ایمیل']||null,
-  }));
-  const valid = mapped.filter(m=> m.first_name || m.last_name || m.student_id || m.email);
-  if(!valid.length) return toast('هیچ رکورد معتبری یافت نشد');
-  const { error } = await supabase.from('members').insert(valid);
-  if(error) return toast(error.message); toast('ایمپورت اعضا انجام شد'); loadMembers();
-});
-$('#btnImportBooks')?.addEventListener('click', async ()=>{
-  const f = $('#fileBooks').files?.[0]; if(!f) return toast('فایل انتخاب نشده');
-  const rows = await readSheet(f);
-  const mapped = rows.map(r=>({
-    title: r.title||r['عنوان']||'',
-    author: r.author||r['نویسنده']||null,
-    translator: r.translator||r['مترجم']||null,
-    pages: parseInt(r.pages||r['تعداد صفحات'])||null,
-    published_year: parseInt(r.published_year||r['سال انتشار'])||null,
-    subject: r.subject||r['موضوع']||null,
-    keywords: ((r.keywords||r['کلیدواژه‌ها']||'')+'').split(';').map(s=>s.trim()).filter(Boolean),
-    publisher: r.publisher||r['انتشارات']||null,
-    isbn: r.isbn||r['ISBN']||null,
-    total_copies: parseInt(r.total_copies||r['تعداد نسخه'])||1,
-    available_copies: parseInt(r.total_copies||r['تعداد نسخه'])||1,
-    cover_url: r.cover_url||null
-  }));
-  const valid = mapped.filter(b=> b.title);
-  if(!valid.length) return toast('هیچ رکورد معتبری یافت نشد');
-  const { error } = await supabase.from('books').insert(valid);
-  if(error) return toast(error.message); toast('ایمپورت کتاب‌ها انجام شد'); loadCatalog(); loadAdminBooks();
-});
-$('#btnExportBooks')?.addEventListener('click', async ()=>{ const { data } = await supabase.from('books').select('*'); download('books.csv', toCSV(data||[])); });
-$('#btnExportMembers')?.addEventListener('click', async ()=>{ const { data } = await supabase.from('members').select('*'); download('members.csv', toCSV(data||[])); });
-$('#btnExportLoans')?.addEventListener('click', async ()=>{ const { data } = await supabase.from('loans').select('id,book_id,member_id,borrowed_at,due_at,returned_at,renewals_count'); download('loans.csv', toCSV(data||[])); });
+  document.getElementById('loanListOverdue').innerHTML =
+    overdue.length ? overdue.map(card).join('') :
+    '<div class="text-sm text-slate-400">مورد معوقی وجود ندارد.</div>';
 
-async function loadSettings(){
-  const { data } = await supabase.from('settings').select('*').eq('id',1).maybeSingle();
-  $('#st_default_days').value = data?.default_loan_days ?? 14;
-  $('#st_tagline').value = data?.tagline || '';
-  if (data?.logo_url) { document.getElementById('logo').src = data.logo_url; document.getElementById('logo').classList.remove('hidden'); document.getElementById('logoFallback').classList.add('hidden'); }
-  if (data?.tagline) { document.getElementById('tagline').textContent = data.tagline; }
+  document.getElementById('loanList').innerHTML = active.map(card).join('');
 }
 $('#settingsForm')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
@@ -700,34 +721,38 @@ document.getElementById('formMemberModal')?.addEventListener('submit', async (e)
 document.getElementById('btnAddMember')?.addEventListener('click', openAddMember);
 
 // === Loan edit via modal & datepickers ===
-async function editLoan(id){
-  const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
+async function openLoanEdit(id){
+  const { data: l, error } = await supabase.from('loans').select('*, members:member_id(id,first_name,last_name)').eq('id', id).maybeSingle();
   if(error || !l){ toast('یافت نشد'); return; }
   document.getElementById('ml_id').value = l.id;
-  // Pre-fill Persian dates
-  try{
-    document.getElementById('ml_borrowed').value = new persianDate(new Date(l.borrowed_at)).format('YYYY/MM/DD');
-  }catch(e){ document.getElementById('ml_borrowed').value=''; }
-  try{
-    document.getElementById('ml_due').value = new persianDate(new Date(l.due_at)).format('YYYY/MM/DD');
-  }catch(e){ document.getElementById('ml_due').value=''; }
+  try{ document.getElementById('ml_borrowed').value = new persianDate(new Date(l.borrowed_at)).format('YYYY/MM/DD'); }catch(e){ document.getElementById('ml_borrowed').value=''; }
+  try{ document.getElementById('ml_due').value = new persianDate(new Date(l.due_at)).format('YYYY/MM/DD'); }catch(e){ document.getElementById('ml_due').value=''; }
   document.getElementById('ml_renewals').value = (l.renewals_count ?? 0);
+  // Member search prefill
+  const mbox = document.getElementById('ml_member_box');
+  const msel = document.getElementById('ml_member_sel');
+  msel.value = l.member_id;
+  mbox.textContent = (l.members?.first_name||'')+' '+(l.members?.last_name||'');
   openModal('modalLoan');
-  initPersianPicker('#ml_borrowed'); initPersianPicker('#ml_due');
+  if(typeof bindJalaliPicker==='function'){
+    bindJalaliPicker(document.getElementById('ml_borrowed'));
+    bindJalaliPicker(document.getElementById('ml_due'));
+  }
 }
-
 document.getElementById('formLoanModal')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const id = parseInt(document.getElementById('ml_id').value,10);
   const b = document.getElementById('ml_borrowed').value.trim();
   const d = document.getElementById('ml_due').value.trim();
   const r = parseInt(document.getElementById('ml_renewals').value,10) || 0;
+  const memberIdStr = document.getElementById('ml_member_sel').value;
   let borrowed_at = null, due_at = null;
   try{ const pb = new persianDate(b.split('/').map(Number)).toGregorian(); borrowed_at = new Date(pb[0], pb[1]-1, pb[2], 12, 0, 0).toISOString(); }catch(e){}
   try{ const pd = new persianDate(d.split('/').map(Number)).toGregorian(); due_at = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0).toISOString(); }catch(e){}
   const payload = { renewals_count: r };
   if(borrowed_at) payload.borrowed_at = borrowed_at;
   if(due_at) payload.due_at = due_at;
+  if(memberIdStr) payload.member_id = parseInt(memberIdStr,10);
   const { error } = await supabase.from('loans').update(payload).eq('id', id);
   if(error){ toast(error.message); return; }
   toast('به‌روزرسانی شد'); closeModal('modalLoan'); loadLoans();
@@ -794,6 +819,7 @@ document.getElementById('formLoanModal')?.addEventListener('submit', async (e)=>
         <button class="px-2 py-1 rounded-lg bg-slate-700" onclick="closeModal('modalLoan')">✕</button>
       </div>
       <form id="formLoanModal" class="grid md:grid-cols-2 gap-4">
+        <div class="md:col-span-2"><label>عضو</label><div class="flex items-center gap-2"><input id="ml_member_query" class="rounded-xl px-3 py-2 w-full" placeholder="نام/نام‌خانوادگی/شماره دانشجویی" autocomplete="off" /><select id="ml_member_sel" class="rounded-xl px-3 py-2"><option value="">— انتخاب —</option></select></div><div id="ml_member_box" class="text-xs text-slate-400 mt-1"></div></div>
         <input type="hidden" id="ml_id" />
         <div><label>تاریخ امانت (هجری شمسی)</label><input id="ml_borrowed" class="rounded-xl px-3 py-2 w-full" /></div>
         <div><label>تاریخ سررسید (هجری شمسی)</label><input id="ml_due" class="rounded-xl px-3 py-2 w-full" /></div>
@@ -978,614 +1004,32 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
-<script src="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/flatpickr.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/l10n/jalaliDate.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/l10n/fa.js"></script>
 <script>
-// Flatpickr + Jalali init for borrowed/due fields + calendar buttons
-document.addEventListener('DOMContentLoaded', function(){
-  function bind(){
-    if(!window.flatpickr) return;
-    var base = {
-      disableMobile: false,
-      dateFormat: "Y/m/d",
-      // use Persian locale if available
-      locale: (flatpickr.l10ns && flatpickr.l10ns.fa) ? flatpickr.l10ns.fa : undefined
-    };
-    var borrowed = document.querySelector('#loan_borrowed');
-    var due = document.querySelector('#loan_due');
-    if(borrowed && !borrowed._fp){
-      borrowed._fp = flatpickr(borrowed, Object.assign({}, base, { }));
-    }
-    if(due && !due._fp){
-      due._fp = flatpickr(due, Object.assign({}, base, { }));
-    }
-    // Buttons
-    [['btn_open_borrowed', borrowed], ['btn_open_due', due]].forEach(function([btnId, input]){
-      var btn = document.getElementById(btnId);
-      if(btn && input && !btn.dataset.bound){
-        btn.addEventListener('click', function(e){
-          e.preventDefault();
-          if(input._fp){ input._fp.open(); }
-          else{ input.focus(); }
-        });
-        btn.dataset.bound = '1';
-      }
-    });
+// Modal member search
+document.getElementById('ml_member_query')?.addEventListener('input', async (e)=>{
+  const q = e.target.value.trim();
+  const sel = document.getElementById('ml_member_sel');
+  sel.innerHTML = '<option value="">— انتخاب —</option>';
+  if(!q) return;
+  let { data } = await supabase.from('members').select('id,first_name,last_name,student_id').or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,student_id.ilike.%${q}%`).limit(10);
+  (data||[]).forEach(m=>{
+    const opt = document.createElement('option');
+    opt.value = m.id; opt.textContent = (m.first_name||'')+' '+(m.last_name||'')+' • '+(m.student_id||'');
+    sel.appendChild(opt);
+  });
+});
+
+// Initialize loan form defaults and pickers when the Loans tab opens
+document.addEventListener('DOMContentLoaded', ()=>{
+  const btn = document.querySelector('[data-tab="admin-loans"]');
+  if(btn){
+    btn.addEventListener('click', ()=> setTimeout(()=>{ if(typeof initLoanForm==='function') initLoanForm(); }, 60));
   }
-  bind();
-  // Rebind when loans tab toggles visibility
-  var tab = document.getElementById('tab-admin-loans');
-  if(tab){
-    var mo = new MutationObserver(function(){ bind(); });
-    mo.observe(tab, {attributes:true, attributeFilter:['class','style']});
-  }
+  // Run once if already visible
+  setTimeout(()=>{ if(typeof initLoanForm==='function') initLoanForm(); }, 120);
 });
 </script>
 
-
-<script>
-(function(){
-  // Config (override-able from settings/localStorage)
-  function getInt(key, def){ try{ var v = parseInt(localStorage.getItem(key)||''); return isNaN(v)? def : v; }catch(e){ return def; } }
-  var DEFAULT_DUE_DAYS = getInt('cfg_due_days', 14);     // پیش‌فرض دو هفته
-  var DEFAULT_RENEW_DAYS = getInt('cfg_renew_days', 7);  // پیش‌فرض یک هفته
-
-  // Utils
-  function fmt(d){ // format yyyy/mm/dd in Jalali-aware Flatpickr: we use Y/m/d; relying on plugin to show Jalali
-    const y = d.getFullYear(); const m=('0'+(d.getMonth()+1)).slice(-2); const da=('0'+d.getDate()).slice(-2);
-    return y+'/'+m+'/'+da;
-  }
-  function today(){ return new Date(); }
-  function addDays(date, days){ var d=new Date(date.getTime()); d.setDate(d.getDate()+days); return d; }
-
-  // Init defaults on pickers if present (Flatpickr already initialized earlier)
-  function setPickerDefault(sel, date){
-    var el = document.querySelector(sel);
-    if(!el) return;
-    if (el._fp && typeof el._fp.setDate==='function'){
-      el._fp.setDate(date, true);
-    }else{
-      el.value = fmt(date);
-    }
-  }
-
-  // Loan list rendering
-  var listActive = document.getElementById('loanListActive');
-  var listOverdue = document.getElementById('loanListOverdue');
-  var overdueWrap = document.getElementById('overdue-wrap');
-  var loans = []; // in-memory for frontend; backend integration can hook into events below
-
-  function isOverdue(loan){
-    var now = new Date();
-    return loan.dueAt < new Date(now.getFullYear(), now.getMonth(), now.getDate()+1); // due before today
-  }
-
-  function render(){
-    // sort by borrowedAt desc (new to old)
-    loans.sort(function(a,b){ return b.borrowedAt - a.borrowedAt; });
-    [listActive, listOverdue].forEach(function(x){ if(x) x.innerHTML=''; });
-
-    var anyOver = false;
-    loans.forEach(function(ln){
-      var card = document.createElement('div');
-      card.className = 'loan-card';
-      card.dataset.id = ln.id;
-      var meta = document.createElement('div'); meta.className='meta';
-      meta.innerHTML = '<strong>' + ln.memberName + '</strong>'
-                     + '<span>ثبت: ' + ln.borrowedStr + ' • سررسید: ' + ln.dueStr + '</span>';
-      var actions = document.createElement('div'); actions.className='actions';
-      var btnBack = document.createElement('button'); btnBack.className='btn danger'; btnBack.textContent='بازگشت';
-      var btnEdit = document.createElement('button'); btnEdit.className='btn'; btnEdit.textContent='ویرایش';
-      var btnRenew = document.createElement('button'); btnRenew.className='btn warn'; btnRenew.textContent='تمدید';
-
-      btnBack.addEventListener('click', function(){
-        // Fire a custom event for backend hook
-        document.dispatchEvent(new CustomEvent('loan:return', {detail: ln}));
-        // Remove from UI
-        loans = loans.filter(function(x){ return x.id !== ln.id; });
-        render();
-      });
-
-      btnEdit.addEventListener('click', function(){
-        openEditModal(ln);
-      });
-
-      btnRenew.addEventListener('click', function(){
-        // default: one week after current due (configurable)
-        var suggested = addDays(ln.dueAt, DEFAULT_RENEW_DAYS);
-        openRenewModal(ln, suggested);
-      });
-
-      actions.appendChild(btnBack); actions.appendChild(btnEdit); actions.appendChild(btnRenew);
-      card.appendChild(meta); card.appendChild(actions);
-
-      if(isOverdue(ln)){
-        anyOver = true;
-        listOverdue.appendChild(card);
-      }else{
-        listActive.appendChild(card);
-      }
-    });
-    overdueWrap.style.display = anyOver ? '' : 'none';
-  }
-
-  // Modals (simple prompt-based fallbacks to stay minimal if no modal HTML)
-  function openEditModal(ln){
-    var name = prompt('نام امانت‌گیرنده:', ln.memberName);
-    if(name === null) return;
-    // Borrowed date
-    var bstr = prompt('تاریخ ثبت (YYYY/MM/DD - جلالی):', ln.borrowedStr);
-    if(bstr === null) return;
-    var dstr = prompt('تاریخ سررسید (YYYY/MM/DD - جلالی):', ln.dueStr);
-    if(dstr === null) return;
-
-    // For now, trust Flatpickr format; convert to Date by splitting (assuming Y/m/d in Gregorian; your backend should convert as needed)
-    function parseYmd(s){
-      var p = s.split('/'); if(p.length!==3) return new Date();
-      return new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
-    }
-    ln.memberName = name;
-    ln.borrowedAt = parseYmd(bstr);
-    ln.dueAt = parseYmd(dstr);
-    ln.borrowedStr = bstr;
-    ln.dueStr = dstr;
-
-    document.dispatchEvent(new CustomEvent('loan:edit', {detail: ln}));
-    render();
-  }
-
-  function openRenewModal(ln, suggested){
-    var dstr = prompt('تمدید تا تاریخ (YYYY/MM/DD - جلالی):', fmt(suggested));
-    if(dstr === null) return;
-    var p = dstr.split('/');
-    var d = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
-    ln.dueAt = d;
-    ln.dueStr = dstr;
-    document.dispatchEvent(new CustomEvent('loan:renew', {detail: ln}));
-    render();
-  }
-
-  // Hook into the loan form submit
-  document.addEventListener('DOMContentLoaded', function(){
-    // defaults
-    setPickerDefault('#loan_borrowed', today());
-    setPickerDefault('#loan_due', addDays(today(), DEFAULT_DUE_DAYS));
-
-    var form = document.getElementById('loanForm') || document.querySelector('form#loanForm');
-    if(form){
-      form.addEventListener('submit', function(e){
-        // Allow backend submit to proceed, but also reflect in UI if successful later.
-        // If you prefer to block default and do async RPC, uncomment next line.
-        // e.preventDefault();
-
-        // Read member name (try multiple selectors)
-        var nameEl = document.querySelector('#loan_member') || form.querySelector('input[name="member_name"]') || form.querySelector('input[placeholder*="نام"]');
-        var memberName = nameEl ? (nameEl.value || '---') : '---';
-
-        var bEl = document.querySelector('#loan_borrowed');
-        var dEl = document.querySelector('#loan_due');
-        var bStr = bEl && bEl.value ? bEl.value : fmt(today());
-        var dStr = dEl && dEl.value ? dEl.value : fmt(addDays(today(), DEFAULT_DUE_DAYS));
-
-        var parse = function(s){ var p=s.split('/'); return new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2])); };
-        var loan = {
-          id: Date.now().toString(36),
-          memberName: memberName,
-          borrowedStr: bStr,
-          dueStr: dStr,
-          borrowedAt: parse(bStr),
-          dueAt: parse(dStr)
-        };
-        // Let backend listen and persist
-        document.dispatchEvent(new CustomEvent('loan:create', {detail: loan}));
-
-        // Optimistically render in UI (frontend)
-        loans.push(loan);
-        render();
-      });
-    }
-  });
-})();
-</script>
-
-
-<script>
-(function(){
-  // Config via localStorage
-  function getInt(key, def){ try{ var v=parseInt(localStorage.getItem(key)||''); return isNaN(v)?def:v; }catch(e){ return def; } }
-  var DEFAULT_DUE_DAYS = getInt('cfg_due_days', 14);
-  var DEFAULT_RENEW_DAYS = getInt('cfg_renew_days', 7);
-
-  // Utilities
-  function fmt(d){ const y=d.getFullYear(); const m=('0'+(d.getMonth()+1)).slice(-2); const da=('0'+d.getDate()).slice(-2); return y+'/'+m+'/'+da; }
-  function addDays(date, days){ var d=new Date(date.getTime()); d.setDate(d.getDate()+days); return d; }
-  function today(){ return new Date(); }
-
-  // Ensure containers exist only inside loans tab
-  function ensureContainers(){
-    var tab = document.getElementById('tab-admin-loans');
-    if(!tab) return null;
-    var mount = tab.querySelector('#loanLists');
-    if(!mount){
-      mount = document.createElement('div');
-      mount.id = 'loanLists';
-      mount.className = 'loan-section';
-      mount.innerHTML = ''
-        + ''
-        +   '<div id="loanListOverdue" class="loan-list"></div>'
-        + '</div>'
-        + '<div class="loan-section">'
-        +   ''
-        + '</div>';
-      tab.appendChild(mount);
-    }
-    return mount;
-  }
-
-  // Modals
-  function buildModals(){
-    if(document.getElementById('loanModals')) return;
-    var wrap = document.createElement('div'); wrap.id='loanModals'; wrap.innerHTML = `
-      <div id="modal-backdrop" class="modal-backdrop">
-        <div class="modal" role="dialog" aria-modal="true">
-          <h4 id="modal-title"></h4>
-          <div id="modal-body"></div>
-          <div class="actions">
-            <button id="modal-cancel" class="btn">انصراف</button>
-            <button id="modal-save" class="btn warn">ثبت</button>
-          </div>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(wrap);
-  }
-
-  function openModal(title, bodyHTML, onPrefill, onSave){
-    var bd = document.getElementById('modal-backdrop'); var t = document.getElementById('modal-title');
-    var b = document.getElementById('modal-body'); var s = document.getElementById('modal-save'); var c = document.getElementById('modal-cancel');
-    t.textContent = title; b.innerHTML = bodyHTML; bd.style.display='flex';
-    function close(){ bd.style.display='none'; s.onclick=null; c.onclick=null; }
-    c.onclick = close;
-    if(onPrefill) onPrefill();
-    s.onclick = async function(){ try{ await onSave(close); } catch(e){ console.error(e); } };
-  }
-
-  // Flatpickr helper
-  function makePicker(sel){
-    var el = (typeof sel==='string')? document.querySelector(sel) : sel;
-    if(!window.flatpickr || !el) return null;
-    return flatpickr(el, {
-      disableMobile:false,
-      dateFormat:"Y/m/d",
-      locale:(flatpickr.l10ns && flatpickr.l10ns.fa)?flatpickr.l10ns.fa:undefined
-    });
-  }
-
-  // State + rendering
-  var loans = [];
-  var listActive, listOverdue, overdueWrap;
-
-  function isOverdue(ln){
-    var now = new Date(); var todayNoTime = new Date(now.getFullYear(),now.getMonth(),now.getDate());
-    return ln.dueAt < todayNoTime;
-  }
-
-  function render(){
-    var mount = ensureContainers(); if(!mount) return;
-    listActive = document.getElementById('loanListActive');
-    listOverdue = document.getElementById('loanListOverdue');
-    overdueWrap = document.getElementById('overdue-wrap');
-    [listActive,listOverdue].forEach(function(n){ if(n) n.innerHTML=''; });
-
-    loans.sort(function(a,b){ return b.borrowedAt - a.borrowedAt; });
-
-    var anyOver=false;
-    loans.forEach(function(ln){
-      var card = document.createElement('div'); card.className='loan-card'; card.dataset.id=ln.id;
-      var meta = document.createElement('div'); meta.className='meta';
-      meta.innerHTML = '<strong>'+ln.memberName+'</strong><span>ثبت: '+ln.borrowedStr+' • سررسید: '+ln.dueStr+'</span>';
-      var actions = document.createElement('div'); actions.className='actions';
-
-      var btnBack = document.createElement('button'); btnBack.className='btn danger'; btnBack.textContent='بازگشت';
-      var btnEdit = document.createElement('button'); btnEdit.className='btn'; btnEdit.textContent='ویرایش';
-      var btnRenew = document.createElement('button'); btnRenew.className='btn warn'; btnRenew.textContent='تمدید';
-
-      btnBack.onclick = function(){
-        document.dispatchEvent(new CustomEvent('loan:return',{detail:ln}));
-        loans = loans.filter(function(x){ return x.id!==ln.id; });
-        render();
-      };
-
-      btnEdit.onclick = function(){
-        buildModals();
-        var body = `
-          <div class="row">
-            <div>
-              <label>نام امانت‌گیرنده</label>
-              <input type="text" id="m_name" value="${ln.memberName}"/>
-            </div>
-            <div>
-              <label>تاریخ ثبت</label>
-              <input type="text" id="m_borrowed" />
-            </div>
-          </div>
-          <div class="row">
-            <div>
-              <label>تاریخ سررسید</label>
-              <input type="text" id="m_due" />
-            </div>
-            <div></div>
-          </div>
-        `;
-        openModal('ویرایش امانت', body, function prefill(){
-          var fpB = makePicker('#m_borrowed'); var fpD = makePicker('#m_due');
-          if(fpB) fpB.setDate(ln.borrowedStr, true);
-          if(fpD) fpD.setDate(ln.dueStr, true);
-        }, function save(close){
-          var name = document.getElementById('m_name').value.trim();
-          var bStr = document.getElementById('m_borrowed').value;
-          var dStr = document.getElementById('m_due').value;
-          function parse(s){ var p=s.split('/'); return new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2])); }
-          ln.memberName = name || ln.memberName;
-          ln.borrowedStr = bStr; ln.dueStr = dStr;
-          ln.borrowedAt = parse(bStr); ln.dueAt = parse(dStr);
-          document.dispatchEvent(new CustomEvent('loan:edit',{detail:ln}));
-          close(); render();
-        });
-      };
-
-      btnRenew.onclick = function(){
-        buildModals();
-        var suggested = addDays(ln.dueAt, DEFAULT_RENEW_DAYS);
-        var body = `
-          <div class="row">
-            <div>
-              <label>تمدید تا تاریخ</label>
-              <input type="text" id="r_due"/>
-            </div>
-          </div>
-        `;
-        openModal('تمدید امانت', body, function prefill(){
-          var fp = makePicker('#r_due'); if(fp) fp.setDate(fmt(suggested), true);
-        }, function save(close){
-          var val = document.getElementById('r_due').value;
-          var p = val.split('/'); var d = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
-          ln.dueAt = d; ln.dueStr = val;
-          document.dispatchEvent(new CustomEvent('loan:renew',{detail:ln}));
-          close(); render();
-        });
-      };
-
-      actions.appendChild(btnBack); actions.appendChild(btnEdit); actions.appendChild(btnRenew);
-      card.appendChild(meta); card.appendChild(actions);
-
-      if(isOverdue(ln)){ anyOver=true; listOverdue.appendChild(card); } else { listActive.appendChild(card); }
-    });
-    overdueWrap.style.display = anyOver ? '' : 'none';
-  }
-
-  // Hook into the loan form submit
-  function hookForm(){
-    var form = document.getElementById('loanForm') || document.querySelector('form#loanForm'); if(!form) return;
-    var bEl = document.querySelector('#loan_borrowed'); var dEl = document.querySelector('#loan_due');
-    if (bEl && !bEl.value){ if(bEl._fp) bEl._fp.setDate(fmt(today()), true); else bEl.value = fmt(today()); }
-    if (dEl && !dEl.value){ var next = addDays(today(), DEFAULT_DUE_DAYS); if(dEl._fp) dEl._fp.setDate(fmt(next), true); else dEl.value = fmt(next); }
-
-    form.addEventListener('submit', function(e){
-      var nameEl = document.querySelector('#loan_member') || form.querySelector('input[name="member_name"]') || form.querySelector('input[placeholder*="نام"]');
-      var memberName = nameEl ? (nameEl.value || '---') : '---';
-      var bStr = bEl && bEl.value ? bEl.value : fmt(today());
-      var dStr = dEl && dEl.value ? dEl.value : fmt(addDays(today(), DEFAULT_DUE_DAYS));
-      function parse(s){ var p=s.split('/'); return new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2])); }
-      var loan = { id: Date.now().toString(36), memberName, borrowedStr:bStr, dueStr:dStr, borrowedAt:parse(bStr), dueAt:parse(dStr) };
-      document.dispatchEvent(new CustomEvent('loan:create',{detail:loan}));
-      loans.push(loan); render();
-    }, false);
-  }
-
-  document.addEventListener('DOMContentLoaded', function(){
-    ensureContainers(); hookForm(); render();
-    var tab = document.getElementById('tab-admin-loans');
-    if(tab){
-      new MutationObserver(function(){ ensureContainers(); render(); })
-        .observe(tab, {attributes:true, attributeFilter:['class','style']});
-    }
-  });
-})();
-</script>
-
-
-<div id="loanModalBackdrop">
-  <div id="loanModal" role="dialog" aria-modal="true">
-    <h4 id="loanModalTitle"></h4>
-    <div id="loanModalBody"></div>
-    <div class="actions">
-      <button id="loanModalCancel" class="btn">انصراف</button>
-      <button id="loanModalSave" class="btn warn">ثبت</button>
-    </div>
-  </div>
-</div>
-
-
-<script>
-(function(){
-  // Config via localStorage
-  function getInt(key, def){ try{ var v=parseInt(localStorage.getItem(key)||''); return isNaN(v)?def:v; }catch(e){ return def; } }
-  var DEFAULT_DUE_DAYS   = getInt('cfg_due_days', 14);
-  var DEFAULT_RENEW_DAYS = getInt('cfg_renew_days', 7);
-
-  function fmt(d){ const y=d.getFullYear(); const m=('0'+(d.getMonth()+1)).slice(-2); const da=('0'+d.getDate()).slice(-2); return y+'/'+m+'/'+da; }
-  function addDays(date, days){ var d=new Date(date.getTime()); d.setDate(d.getDate()+days); return d; }
-  function today(){ return new Date(); }
-  function parseYMD(s){ var p=s.split('/'); return new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2])); }
-
-  // Mount container right after the loan form
-  function ensureMount(){
-    var form = document.getElementById('loanForm') || document.querySelector('form#loanForm');
-    if(!form) return null;
-    var mount = document.getElementById('loanMount');
-    if(!mount){
-      mount = document.createElement('div');
-      mount.id = 'loanMount';
-      mount.innerHTML = ''
-        + '<div id="overdueBox" class="overdue-box" style="display:none">'
-        + '  <div class="overdue-title">امانت‌های معوق (گذشته از سررسید)</div>'
-        + '  <div id="loanListOverdue" class="loan-list"></div>'
-        + '</div>'
-        + '<div id="loanListActive" class="loan-list"></div>';
-      form.insertAdjacentElement('afterend', mount);
-    }
-    return mount;
-  }
-
-  // Modal helpers
-  function openModal(title, bodyHTML, prefill, onSave){
-    var bd = document.getElementById('loanModalBackdrop');
-    document.getElementById('loanModalTitle').textContent = title;
-    document.getElementById('loanModalBody').innerHTML = bodyHTML;
-    bd.style.display = 'flex';
-    function close(){ bd.style.display='none'; save.onclick=null; cancel.onclick=null; }
-    var save = document.getElementById('loanModalSave');
-    var cancel = document.getElementById('loanModalCancel');
-    cancel.onclick = close;
-    if(typeof prefill === 'function') prefill();
-    save.onclick = function(){ onSave(close); };
-  }
-  function makePicker(el){
-    if(!window.flatpickr || !el) return null;
-    return flatpickr(el, { disableMobile:false, dateFormat:'Y/m/d', locale:(flatpickr.l10ns && flatpickr.l10ns.fa)?flatpickr.l10ns.fa:undefined });
-  }
-
-  // State & render
-  var loans = [];
-  var listActive, listOverdue, overdueBox;
-
-  function isOverdue(ln){
-    var now = new Date(); var t = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return ln.dueAt < t;
-  }
-
-  function render(){
-    var mount = ensureMount(); if(!mount) return;
-    listActive = document.getElementById('loanListActive');
-    listOverdue = document.getElementById('loanListOverdue');
-    overdueBox  = document.getElementById('overdueBox');
-    listActive.innerHTML = ''; listOverdue.innerHTML = '';
-
-    loans.sort(function(a,b){ return b.borrowedAt - a.borrowedAt; });
-
-    var anyOver = false;
-    loans.forEach(function(ln){
-      var card = document.createElement('div'); card.className='loan-card'; card.dataset.id=ln.id;
-      var meta = document.createElement('div'); meta.className='meta';
-      meta.innerHTML = '<strong>'+ln.memberName+'</strong><span>ثبت: '+ln.borrowedStr+' • سررسید: '+ln.dueStr+'</span>';
-      var actions = document.createElement('div'); actions.className='actions';
-      var btnBack  = document.createElement('button'); btnBack.className='btn danger'; btnBack.textContent='بازگشت';
-      var btnEdit  = document.createElement('button'); btnEdit.className='btn';        btnEdit.textContent='ویرایش';
-      var btnRenew = document.createElement('button'); btnRenew.className='btn warn';  btnRenew.textContent='تمدید';
-
-      btnBack.onclick = function(){
-        document.dispatchEvent(new CustomEvent('loan:return', {detail: ln}));
-        loans = loans.filter(function(x){ return x.id!==ln.id; });
-        render();
-      };
-
-      btnEdit.onclick = function(){
-        openModal('ویرایش امانت', `
-          <div class="row">
-            <div>
-              <label>نام امانت‌گیرنده</label>
-              <input type="text" id="m_name" />
-            </div>
-            <div>
-              <label>تاریخ ثبت</label>
-              <input type="text" id="m_borrowed" />
-            </div>
-          </div>
-          <div class="row">
-            <div>
-              <label>تاریخ سررسید</label>
-              <input type="text" id="m_due" />
-            </div>
-            <div></div>
-          </div>
-        `, function prefill(){
-          document.getElementById('m_name').value = ln.memberName;
-          var fpB = makePicker(document.getElementById('m_borrowed')); if(fpB) fpB.setDate(ln.borrowedStr, true);
-          var fpD = makePicker(document.getElementById('m_due'));      if(fpD) fpD.setDate(ln.dueStr, true);
-        }, function save(close){
-          var name = document.getElementById('m_name').value.trim();
-          var bStr = document.getElementById('m_borrowed').value;
-          var dStr = document.getElementById('m_due').value;
-          ln.memberName = name || ln.memberName;
-          ln.borrowedStr = bStr; ln.dueStr = dStr;
-          ln.borrowedAt = parseYMD(bStr); ln.dueAt = parseYMD(dStr);
-          document.dispatchEvent(new CustomEvent('loan:edit', {detail: ln}));
-          close(); render();
-        });
-      };
-
-      btnRenew.onclick = function(){
-        var suggested = addDays(ln.dueAt, DEFAULT_RENEW_DAYS);
-        openModal('تمدید امانت', `
-          <div class="row">
-            <div>
-              <label>تمدید تا تاریخ</label>
-              <input type="text" id="r_due" />
-            </div>
-          </div>
-        `, function prefill(){
-          var fp = makePicker(document.getElementById('r_due')); if(fp) fp.setDate(fmt(suggested), true);
-        }, function save(close){
-          var val = document.getElementById('r_due').value;
-          ln.dueAt = parseYMD(val); ln.dueStr = val;
-          document.dispatchEvent(new CustomEvent('loan:renew', {detail: ln}));
-          close(); render();
-        });
-      };
-
-      actions.appendChild(btnBack); actions.appendChild(btnEdit); actions.appendChild(btnRenew);
-      card.appendChild(meta); card.appendChild(actions);
-
-      if(isOverdue(ln)){ anyOver = true; listOverdue.appendChild(card); } else { listActive.appendChild(card); }
-    });
-    overdueBox.style.display = anyOver ? '' : 'none';
-  }
-
-  // Hook loan form
-  function hookForm(){
-    var form = document.getElementById('loanForm') || document.querySelector('form#loanForm');
-    if(!form) return;
-    var bEl = document.querySelector('#loan_borrowed');
-    var dEl = document.querySelector('#loan_due');
-    if(bEl && !bEl.value){ if(bEl._fp) bEl._fp.setDate(fmt(today()), true); else bEl.value = fmt(today()); }
-    if(dEl && !dEl.value){ var next = addDays(today(), DEFAULT_DUE_DAYS); if(dEl._fp) dEl._fp.setDate(fmt(next), true); else dEl.value = fmt(next); }
-
-    form.addEventListener('submit', function(e){
-      // let backend submit too; we also mirror in UI
-      var nameEl = document.querySelector('#loan_member') || form.querySelector('input[name="member_name"]') || form.querySelector('input[placeholder*="نام"]');
-      var memberName = nameEl ? (nameEl.value || '---') : '---';
-      var bStr = bEl && bEl.value ? bEl.value : fmt(today());
-      var dStr = dEl && dEl.value ? dEl.value : fmt(addDays(today(), DEFAULT_DUE_DAYS));
-      var loan = {
-        id: Date.now().toString(36),
-        memberName: memberName,
-        borrowedStr: bStr,
-        dueStr: dStr,
-        borrowedAt: parseYMD(bStr),
-        dueAt: parseYMD(dStr)
-      };
-      document.dispatchEvent(new CustomEvent('loan:create', {detail: loan}));
-      loans.push(loan); render();
-    }, false);
-  }
-
-  document.addEventListener('DOMContentLoaded', function(){
-    ensureMount(); hookForm(); render();
-  });
-})();
-</script>
-
+<script>document.addEventListener('DOMContentLoaded', function(){ try{ lucide.createIcons(); }catch(e){} });</script>
 </body>
 </html>
