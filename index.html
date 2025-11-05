@@ -192,15 +192,13 @@ const fmtDate = (s)=>{
   try{
     if(!s) return '—';
     const d = new Date(s);
-    if(!Number.isFinite(d.getTime())) return '—';
-    const y = d.getFullYear();
-    if(y < 1900 || y > 3000) return '—';
-    const j = g2j(d.getFullYear(), d.getMonth()+1, d.getDate());
+    if (isNaN(d.getTime())) return '—';
+    const j = g2j(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate());
     return fmtJ(j[0], j[1], j[2]);
-  }catch(_){
-    try{ return new Date(s).toLocaleDateString('fa-IR'); }catch(__){ return s || '—'; }
+  }catch(e){
+    try{ return new Date(s).toLocaleDateString('fa-IR'); }catch(_){ return s||'—'; }
   }
-};;
+};
 const toast = (msg)=>{ const el=document.createElement('div'); el.className='fixed bottom-4 right-4 bg-black/80 text-white px-3 py-2 rounded-xl text-sm'; el.textContent=msg; document.body.appendChild(el); setTimeout(()=>el.remove(),3000); };
 
 function toCSV(rows){
@@ -422,68 +420,65 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
   const bookId = $('#loan_book_results')?.dataset.sel;
   if(!memberId || !bookId) { toast('عضو و کتاب را انتخاب کنید'); return; }
 
-  // Borrowed date: accept Jalali or Gregorian typed
+  // Borrowed date (Jalali) -> Gregorian ISO
   let borrowed_at_iso;
   const bStr = $('#loan_borrowed').value?.trim();
-  borrowed_at_iso = parseDateStrToISO(bStr) || new Date().toISOString();
+  const bp = parseJalaliInput(bStr);
+  if (bp) {
+    borrowed_at_iso = jalaliToIso(bp[0], bp[1], bp[2]);
+  }
+  if(!borrowed_at_iso){ borrowed_at_iso = new Date().toISOString(); }
 
-  // Due date: accept Jalali or Gregorian typed
+  // Due date (Jalali) -> Gregorian ISO
   let due_at_iso;
   const dueStr = $('#loan_due').value?.trim();
-  due_at_iso = parseDateStrToISO(dueStr);
+  const dp = parseJalaliInput(dueStr);
+  if (dp) {
+    due_at_iso = jalaliToIso(dp[0], dp[1], dp[2]);
+  }
   if(!due_at_iso){
     const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
     const days = st?.default_loan_days || 14;
     due_at_iso = new Date(Date.now() + days*24*3600*1000).toISOString();
   }
 
-
-  // Try RPC with borrowed_at support first; fallback if not available, then direct insert
-  let loan = null;
-  try {
-    let payload1 = {
+  // Try RPC with borrowed_at support first; fallback if arg not accepted
+  let rpcError = null, loan = null;
+  let payload = {
+    p_book_id: parseInt(bookId, 10),
+    p_member_id: parseInt(memberId, 10),
+    p_admin_id: user.id,
+    p_due_at: due_at_iso,
+    p_borrowed_at: borrowed_at_iso
+  };
+  let res = await supabase.rpc('issue_loan', payload);
+  if(res.error){
+    // Retry without p_borrowed_at
+    payload = {
       p_book_id: parseInt(bookId, 10),
       p_member_id: parseInt(memberId, 10),
       p_admin_id: user.id,
-      p_due_at: due_at_iso,
-      p_borrowed_at: borrowed_at_iso
+      p_due_at: due_at_iso
     };
-    let r1 = await supabase.rpc('issue_loan', payload1);
-    if (r1.error) {
-      let payload2 = {
-        p_book_id: parseInt(bookId, 10),
-        p_member_id: parseInt(memberId, 10),
-        p_admin_id: user.id,
-        p_due_at: due_at_iso
-      };
-      let r2 = await supabase.rpc('issue_loan', payload2);
-      if (r2.error) {
-        const insertPayload = {
-          book_id: parseInt(bookId,10),
-          member_id: parseInt(memberId,10),
-          issued_by_admin_id: user.id,
-          borrowed_at: borrowed_at_iso,
-          due_at: due_at_iso
-        };
-        const { data: ins, error: insErr } = await supabase.from('loans').insert(insertPayload).select().maybeSingle();
-        if (insErr) { toast(insErr.message || 'خطا در ثبت امانت'); return; }
-        loan = ins;
-      } else {
-        loan = r2.data;
+    res = await supabase.rpc('issue_loan', payload);
+    if(res.error){ toast(res.error.message || 'خطا در ثبت امانت'); return; }
+    loan = res.data;
+    // If loan id returned, update borrowed_at explicitly
+    try{
+      if(loan && loan.id){
+        await supabase.from('loans').update({ borrowed_at: borrowed_at_iso }).eq('id', loan.id);
       }
-    } else {
-      loan = r1.data;
-    }
-
-    // Ensure borrowed_at is set if server didn't set it
-    if (loan && loan.id && !loan.borrowed_at) {
-      await supabase.from('loans').update({ borrowed_at: borrowed_at_iso }).eq('id', loan.id);
-    }
-  } catch (e) {
-    console.error(e);
-    toast('خطا در ثبت امانت'); 
-    return;
+    }catch(e){}
+  }else{
+    loan = res.data;
+    // If server didn't set borrowed_at, update
+    try{
+      if(loan && loan.id){
+        await supabase.from('loans').update({ borrowed_at: borrowed_at_iso }).eq('id', loan.id);
+      }
+    }catch(e){}
   }
+
   toast('امانت ثبت شد');
   // Reset quick inputs
   $('#loan_member_results').innerHTML=''; $('#loan_member_results').dataset.sel='';
@@ -590,9 +585,10 @@ async function extendLoan(id){
   modal.classList.remove('hidden'); modal.classList.add('flex');
 
   const handlerOk = async ()=>{
-    const iso = parseDateStrToISO(inp.value||'');
-    if(!iso){ toast('تاریخ نامعتبر'); return; }
-    const payload = { due_at: iso, renewals_count: (l.renewals_count||0) + 1 };
+    const parts = parseJalaliInput(inp.value||'');
+    if(!parts){ toast('تاریخ نامعتبر'); return; }
+    const due_at_iso = jalaliToIso(parts[0], parts[1], parts[2]);
+    const payload = { due_at: due_at_iso, renewals_count: (l.renewals_count||0) + 1 };
     const { error: e2 } = await supabase.from('loans').update(payload).eq('id', id);
     if(e2){ toast(e2.message); return; }
     toast('تمدید شد');
@@ -790,6 +786,20 @@ async function editLoan(id){
   const btnSave = $('#edit_loan_save');
   const btnCancel = $('#edit_loan_cancel');
 
+  // helper to set jalali to inputs
+  const setJalali = (el, d)=>{
+    const j = g2j(d.getFullYear(), d.getMonth()+1, d.getDate());
+    el.value = fmtJ(j[0], j[1], j[2]);
+  };
+
+  // Prefill fields
+  try{
+    const b = l.borrowed_at ? new Date(l.borrowed_at) : new Date();
+    const d = l.due_at ? new Date(l.due_at) : new Date();
+    setJalali(inpBorrowed, b);
+    setJalali(inpDue, d);
+  }catch(_){}
+
   // Show current member
   res.innerHTML = '';
   if(l.members){
@@ -809,14 +819,14 @@ async function editLoan(id){
       const cfg = Object.assign({}, loanBorrowed._flatpickr.config);
       if (inpBorrowed._flatpickr) inpBorrowed._flatpickr.destroy();
       window.flatpickr(inpBorrowed, cfg);
-      inpBorrowed._flatpickr.setDate(toDateForPicker(l.borrowed_at), true);
+      inpBorrowed._flatpickr.setDate(l.borrowed_at ? new Date(l.borrowed_at) : new Date(), true);
     }
     const loanDue = document.getElementById('loan_due');
     if (loanDue && loanDue._flatpickr && window.flatpickr) {
       const cfg2 = Object.assign({}, loanDue._flatpickr.config);
       if (inpDue._flatpickr) inpDue._flatpickr.destroy();
       window.flatpickr(inpDue, cfg2);
-      inpDue._flatpickr.setDate(toDateForPicker(l.due_at), true);
+      inpDue._flatpickr.setDate(l.due_at ? new Date(l.due_at) : new Date(), true);
     }
   }catch(_){}
 
@@ -842,12 +852,13 @@ async function editLoan(id){
   };
 
   const onSave = async ()=>{
-    const isoB = parseDateStrToISO(inpBorrowed.value||'');
-    const isoD = parseDateStrToISO(inpDue.value||'');
-    if(!isoB || !isoD){ toast('تاریخ نامعتبر'); return; }
+    // Parse Jalali inputs robustly (supports Persian digits)
+    const bp = parseJalaliInput(inpBorrowed.value||'');
+    const dp = parseJalaliInput(inpDue.value||'');
+    if(!bp || !dp){ toast('تاریخ نامعتبر'); return; }
     const payload = {
-      borrowed_at: isoB,
-      due_at: isoD
+      borrowed_at: jalaliToIso(bp[0], bp[1], bp[2]),
+      due_at: jalaliToIso(dp[0], dp[1], dp[2])
     };
     const sel = res.dataset.sel ? parseInt(res.dataset.sel,10) : null;
     if(sel && sel !== l.member_id) payload.member_id = sel;
@@ -938,7 +949,6 @@ async function editLoan(id){
 <script>
 // ---------- Robust Persian datepicker binding ----------
 (function(){
-  function ready(){ return !!(window.jQuery && window.flatpickr); }
   function bindOnce(selector){
     if(!ready()) return false;
     try{
@@ -1091,20 +1101,9 @@ document.addEventListener('DOMContentLoaded', function(){
     if(!window.flatpickr) return;
     var base = {
       disableMobile: false,
-      dateFormat: "Y-m-d",
-      altInput: true,
-      altFormat: "Y/m/d",
-      // Persian locale
-      locale: (flatpickr.l10ns && flatpickr.l10ns.fa) ? flatpickr.l10ns.fa : undefined,
-      // Robust Jalali plugin detection (supports multiple globals)
-      plugins: (function(){
-        try{
-          if (window.jalaliDate) return [ new window.jalaliDate() ];
-          if (window.JalaliDate) return [ new window.JalaliDate() ];
-          if (window.flatpickrJalaliSupport && window.flatpickrJalaliSupport.jalaliDate) return [ new window.flatpickrJalaliSupport.jalaliDate() ];
-        }catch(_){}
-        return [];
-      })()
+      dateFormat: "Y/m/d",
+      // use Persian locale if available
+      locale: (flatpickr.l10ns && flatpickr.l10ns.fa) ? flatpickr.l10ns.fa : undefined
     };
     var borrowed = document.querySelector('#loan_borrowed');
     var due = document.querySelector('#loan_due');
@@ -1197,43 +1196,38 @@ function g2j(gy, gm, gd){
 }
 function pad2(n){ return String(n).padStart(2,'0'); }
 function fmtJ(y,m,d){ return `${y}/${pad2(m)}/${pad2(d)}`; }
-// --- Robust parser: accepts either Jalali (<=1600-ish) or Gregorian (>=1700) inputs like "YYYY/MM/DD" or "YYYY-MM-DD"
-function parseDateStrToISO(str){
-  if(!str) return null;
-  try{
-    const parts = str.replaceAll('-', '/').split('/').map(s=>parseInt(s,10));
-    if(parts.length >= 3 && !parts.some(isNaN)){
-      const y = parts[0], m = parts[1], d = parts[2];
-      // Heuristic: Gregorian years are >= 1700, Jalali typically ~1300-1500s for current dates
-      if(y >= 1700){
-        const g = new Date(y, (m||1)-1, (d||1), 12, 0, 0);
-        return g.toISOString();
-      }else{
-        const pj = j2g(y, m||1, d||1);
-        const g = new Date(pj[0], pj[1]-1, pj[2], 12, 0, 0);
-        return g.toISOString();
-      }
-
-// --- Coerce db value (ISO or 'YYYY/MM/DD' Jalali string) to a Date for flatpickr
-function toDateForPicker(s){
-  try{
-    if(!s) return new Date();
-    if(typeof s === 'string' && s.includes('/')){
-      const parts = s.replaceAll('-', '/').split('/').map(x=>parseInt(x,10));
-      if(parts.length>=3 && !parts.some(isNaN)){
-        const j = j2g(parts[0], parts[1]||1, parts[2]||1);
-        return new Date(j[0], j[1]-1, j[2], 12, 0, 0);
-      }
-    }
-    // Fallback: assume ISO/parsable Gregorian
-    const d = new Date(s);
-    if(Number.isFinite(d.getTime())) return d;
-  }catch(e){}
-  return new Date();
+// ---- Normalizers & safe conversions ----
+function toEnDigits(str){
+  if(!str) return '';
+  const fa = '۰۱۲۳۴۵۶۷۸۹';
+  const ar = '٠١٢٣٤٥٦٧٨٩';
+  let out = '';
+  for (const ch of String(str)){
+    const i1 = fa.indexOf(ch);
+    if(i1 >= 0){ out += String(i1); continue; }
+    const i2 = ar.indexOf(ch);
+    if(i2 >= 0){ out += String(i2); continue; }
+    out += ch;
+  }
+  return out;
 }
-    }
-  }catch(e){}
-  return null;
+function parseJalaliInput(s){
+  const t = toEnDigits((s||'').trim()).replace(/-/g,'/').replace(/\./g,'/');
+  const m = t.match(/^(\d{3,4})\/(\d{1,2})\/(\d{1,2})$/);
+  if(!m) return null;
+  const y = parseInt(m[1],10), mo = parseInt(m[2],10), d = parseInt(m[3],10);
+  if(!y || !mo || !d) return null;
+  return [y, mo, d];
+}
+function jalaliToIso(y,m,d){
+  const g = j2g(y,m,d);
+  return new Date(Date.UTC(g[0], g[1]-1, g[2], 12, 0, 0)).toISOString();
+}
+function isoToJalali(iso){
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  const j = g2j(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate());
+  return fmtJ(j[0], j[1], j[2]);
 }
 
 </script>
