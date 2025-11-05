@@ -189,6 +189,8 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = (sel)=> document.querySelector(sel);
 const $$ = (sel)=> Array.from(document.querySelectorAll(sel));
 const fmtDate = (s)=>{
+  // Guard against far-future years accidentally stored (e.g., Gregorian parsed as Jalali)
+  try{ if(s){ const d=new Date(s); if(d.getFullYear()>2100) return '—'; } }catch(_){}
   try{
     if(!s) return '—';
     const d = new Date(s);
@@ -419,30 +421,15 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
   const bookId = $('#loan_book_results')?.dataset.sel;
   if(!memberId || !bookId) { toast('عضو و کتاب را انتخاب کنید'); return; }
 
-  // Borrowed date (Jalali) -> Gregorian ISO
+  // Borrowed date: accept Jalali or Gregorian typed
   let borrowed_at_iso;
   const bStr = $('#loan_borrowed').value?.trim();
-  if (bStr) {
-    try {
-      const parts = bStr.replaceAll('-', '/').split('/').map(x=>parseInt(x,10));
-      const pb = j2g(parts[0], parts[1], parts[2]);
-      const gb = new Date(pb[0], pb[1]-1, pb[2], 12, 0, 0);
-      borrowed_at_iso = gb.toISOString();
-    } catch(e){}
-  }
-  if(!borrowed_at_iso){ borrowed_at_iso = new Date().toISOString(); }
+  borrowed_at_iso = parseDateStrToISO(bStr) || new Date().toISOString();
 
-  // Due date (Jalali) -> Gregorian ISO
+  // Due date: accept Jalali or Gregorian typed
   let due_at_iso;
   const dueStr = $('#loan_due').value?.trim();
-  if (dueStr) {
-    try {
-      const parts = dueStr.replaceAll('-', '/').split('/').map(x=>parseInt(x,10));
-      const pd = j2g(parts[0], parts[1], parts[2]);
-      const g = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0);
-      due_at_iso = g.toISOString();
-    } catch(e){}
-  }
+  due_at_iso = parseDateStrToISO(dueStr);
   if(!due_at_iso){
     const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
     const days = st?.default_loan_days || 14;
@@ -592,11 +579,9 @@ async function extendLoan(id){
   modal.classList.remove('hidden'); modal.classList.add('flex');
 
   const handlerOk = async ()=>{
-    const parts = (inp.value||'').replaceAll('-', '/').split('/').map(s=>parseInt(s,10));
-    if(parts.length<3 || parts.some(isNaN)){ toast('تاریخ نامعتبر'); return; }
-    const g = j2g(parts[0], parts[1], parts[2]);
-    const due_at = new Date(g[0], g[1]-1, g[2], 12, 0, 0);
-    const payload = { due_at: due_at.toISOString(), renewals_count: (l.renewals_count||0) + 1 };
+    const iso = parseDateStrToISO(inp.value||'');
+    if(!iso){ toast('تاریخ نامعتبر'); return; }
+    const payload = { due_at: iso, renewals_count: (l.renewals_count||0) + 1 };
     const { error: e2 } = await supabase.from('loans').update(payload).eq('id', id);
     if(e2){ toast(e2.message); return; }
     toast('تمدید شد');
@@ -860,15 +845,12 @@ async function editLoan(id){
   };
 
   const onSave = async ()=>{
-    // Parse Jalali inputs
-    const bp = (inpBorrowed.value||'').replaceAll('-', '/').split('/').map(Number);
-    const dp = (inpDue.value||'').replaceAll('-', '/').split('/').map(Number);
-    if(bp.length<3 || dp.length<3 || bp.some(isNaN) || dp.some(isNaN)){ toast('تاریخ نامعتبر'); return; }
-    const bg = j2g(bp[0], bp[1], bp[2]);
-    const dg = j2g(dp[0], dp[1], dp[2]);
+    const isoB = parseDateStrToISO(inpBorrowed.value||'');
+    const isoD = parseDateStrToISO(inpDue.value||'');
+    if(!isoB || !isoD){ toast('تاریخ نامعتبر'); return; }
     const payload = {
-      borrowed_at: new Date(bg[0], bg[1]-1, bg[2], 12, 0, 0).toISOString(),
-      due_at: new Date(dg[0], dg[1]-1, dg[2], 12, 0, 0).toISOString()
+      borrowed_at: isoB,
+      due_at: isoD
     };
     const sel = res.dataset.sel ? parseInt(res.dataset.sel,10) : null;
     if(sel && sel !== l.member_id) payload.member_id = sel;
@@ -1206,6 +1188,27 @@ function g2j(gy, gm, gd){
 }
 function pad2(n){ return String(n).padStart(2,'0'); }
 function fmtJ(y,m,d){ return `${y}/${pad2(m)}/${pad2(d)}`; }
+// --- Robust parser: accepts either Jalali (<=1600-ish) or Gregorian (>=1700) inputs like "YYYY/MM/DD" or "YYYY-MM-DD"
+function parseDateStrToISO(str){
+  if(!str) return null;
+  try{
+    const parts = str.replaceAll('-', '/').split('/').map(s=>parseInt(s,10));
+    if(parts.length >= 3 && !parts.some(isNaN)){
+      const y = parts[0], m = parts[1], d = parts[2];
+      // Heuristic: Gregorian years are >= 1700, Jalali typically ~1300-1500s for current dates
+      if(y >= 1700){
+        const g = new Date(y, (m||1)-1, (d||1), 12, 0, 0);
+        return g.toISOString();
+      }else{
+        const pj = j2g(y, m||1, d||1);
+        const g = new Date(pj[0], pj[1]-1, pj[2], 12, 0, 0);
+        return g.toISOString();
+      }
+    }
+  }catch(e){}
+  return null;
+}
+
 </script>
 
 
