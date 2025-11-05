@@ -189,17 +189,18 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = (sel)=> document.querySelector(sel);
 const $$ = (sel)=> Array.from(document.querySelectorAll(sel));
 const fmtDate = (s)=>{
-  // Guard against far-future years accidentally stored (e.g., Gregorian parsed as Jalali)
-  try{ if(s){ const d=new Date(s); if(d.getFullYear()>2100) return '—'; } }catch(_){}
   try{
     if(!s) return '—';
     const d = new Date(s);
+    if(!isFinite(d)) return '—';
+    const y = d.getFullYear();
+    if(y < 1900 || y > 3000) return '—';
     const j = g2j(d.getFullYear(), d.getMonth()+1, d.getDate());
     return fmtJ(j[0], j[1], j[2]);
-  }catch(e){
-    try{ return new Date(s).toLocaleDateString('fa-IR'); }catch(_){ return s||'—'; }
+  }catch(_){
+    try{ return new Date(s).toLocaleDateString('fa-IR'); }catch(__){ return s || '—'; }
   }
-};
+};;
 const toast = (msg)=>{ const el=document.createElement('div'); el.className='fixed bottom-4 right-4 bg-black/80 text-white px-3 py-2 rounded-xl text-sm'; el.textContent=msg; document.body.appendChild(el); setTimeout(()=>el.remove(),3000); };
 
 function toCSV(rows){
