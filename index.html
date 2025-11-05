@@ -437,43 +437,53 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
     due_at_iso = new Date(Date.now() + days*24*3600*1000).toISOString();
   }
 
-  // Try RPC with borrowed_at support first; fallback if arg not accepted
-  let rpcError = null, loan = null;
-  let payload = {
-    p_book_id: parseInt(bookId, 10),
-    p_member_id: parseInt(memberId, 10),
-    p_admin_id: user.id,
-    p_due_at: due_at_iso,
-    p_borrowed_at: borrowed_at_iso
-  };
-  let res = await supabase.rpc('issue_loan', payload);
-  if(res.error){
-    // Retry without p_borrowed_at
-    payload = {
+
+  // Try RPC with borrowed_at support first; fallback if not available, then direct insert
+  let loan = null;
+  try {
+    let payload1 = {
       p_book_id: parseInt(bookId, 10),
       p_member_id: parseInt(memberId, 10),
       p_admin_id: user.id,
-      p_due_at: due_at_iso
+      p_due_at: due_at_iso,
+      p_borrowed_at: borrowed_at_iso
     };
-    res = await supabase.rpc('issue_loan', payload);
-    if(res.error){ toast(res.error.message || 'خطا در ثبت امانت'); return; }
-    loan = res.data;
-    // If loan id returned, update borrowed_at explicitly
-    try{
-      if(loan && loan.id){
-        await supabase.from('loans').update({ borrowed_at: borrowed_at_iso }).eq('id', loan.id);
+    let r1 = await supabase.rpc('issue_loan', payload1);
+    if (r1.error) {
+      let payload2 = {
+        p_book_id: parseInt(bookId, 10),
+        p_member_id: parseInt(memberId, 10),
+        p_admin_id: user.id,
+        p_due_at: due_at_iso
+      };
+      let r2 = await supabase.rpc('issue_loan', payload2);
+      if (r2.error) {
+        const insertPayload = {
+          book_id: parseInt(bookId,10),
+          member_id: parseInt(memberId,10),
+          issued_by_admin_id: user.id,
+          borrowed_at: borrowed_at_iso,
+          due_at: due_at_iso
+        };
+        const { data: ins, error: insErr } = await supabase.from('loans').insert(insertPayload).select().maybeSingle();
+        if (insErr) { toast(insErr.message || 'خطا در ثبت امانت'); return; }
+        loan = ins;
+      } else {
+        loan = r2.data;
       }
-    }catch(e){}
-  }else{
-    loan = res.data;
-    // If server didn't set borrowed_at, update
-    try{
-      if(loan && loan.id){
-        await supabase.from('loans').update({ borrowed_at: borrowed_at_iso }).eq('id', loan.id);
-      }
-    }catch(e){}
-  }
+    } else {
+      loan = r1.data;
+    }
 
+    // Ensure borrowed_at is set if server didn't set it
+    if (loan && loan.id && !loan.borrowed_at) {
+      await supabase.from('loans').update({ borrowed_at: borrowed_at_iso }).eq('id', loan.id);
+    }
+  } catch (e) {
+    console.error(e);
+    toast('خطا در ثبت امانت'); 
+    return;
+  }
   toast('امانت ثبت شد');
   // Reset quick inputs
   $('#loan_member_results').innerHTML=''; $('#loan_member_results').dataset.sel='';
@@ -928,6 +938,7 @@ async function editLoan(id){
 <script>
 // ---------- Robust Persian datepicker binding ----------
 (function(){
+  function ready(){ return !!(window.jQuery && window.flatpickr); }
   function bindOnce(selector){
     if(!ready()) return false;
     try{
