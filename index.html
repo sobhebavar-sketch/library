@@ -18,137 +18,7 @@
     label { font-size: 12px; color: rgba(226,232,240,.8); }
   </style>
 
-
-<style>
-  /* Minimal Jalali picker */
-  .jalali-picker{position:absolute;z-index:60;background:#0f172a;border:1px solid rgba(255,255,255,.15);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:8px;min-width:260px}
-  .jp-head{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#cbd5e1;margin-bottom:6px}
-  .jp-head button{background:#1f2937;border:1px solid rgba(255,255,255,.1);color:#e2e8f0;border-radius:8px;padding:2px 6px}
-  .jp-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
-  .jp-cell{font-size:12px;text-align:center;padding:6px 0;border-radius:8px;cursor:pointer}
-  .jp-cell.jp-dow{opacity:.7;cursor:default}
-  .jp-cell:hover{background:rgba(255,255,255,.08)}
-  .jp-cell.jp-today{outline:1px dashed rgba(255,255,255,.25)}
-  .jp-cell.jp-selected{background:#2563eb}
-  .date-input-wrap{display:flex;gap:6px;align-items:center}
-  .date-btn{background:#1f2937;border:1px solid rgba(255,255,255,.12);border-radius:10px;align-items:center;justify-content:center}
-</style>
-<script>
-/* ===== Lightweight Jalali picker (requires window.persianDate) ===== */
-(function(){
-  function fmtYMD(pd){ try{ return new persianDate(pd).format('YYYY/MM/DD'); }catch(e){ return ''; } }
-  function parseYMD(str){
-    if(!str) return null;
-    var p = str.split('/').map(function(x){ return parseInt(x,10)||0; });
-    if(p.length!==3 || !p[0]||!p[1]||!p[2]) return null;
-    return {year:p[0], month:p[1], day:p[2]};
-  }
-  function pdFromParts(parts){ return new persianDate([parts.year, parts.month, parts.day]); }
-
-  function buildPicker(input){
-    var anchor = input.getBoundingClientRect();
-    var root = document.createElement('div');
-    root.className = 'jalali-picker';
-    root.style.top = (window.scrollY + anchor.bottom + 6) + 'px';
-    root.style.left = (window.scrollX + anchor.left) + 'px';
-
-    var sel = parseYMD(input.value) || (function(){ var t = new persianDate(new Date()); return {year:t.year(), month:t.month(), day:t.date()}; })();
-    var currentYear = sel.year, currentMonth = sel.month, selected = {y:sel.year,m:sel.month,d:sel.day};
-
-    function render(){
-      root.innerHTML = '';
-      var head = document.createElement('div'); head.className='jp-head';
-      var title = document.createElement('div'); title.textContent = new persianDate([currentYear,currentMonth,1]).format('MMMM YYYY');
-      var left = document.createElement('button'); left.type='button'; left.textContent='◀';
-      var right = document.createElement('button'); right.type='button'; right.textContent='▶';
-      left.onclick = function(){ currentMonth--; if(currentMonth<1){ currentMonth=12; currentYear--; } render(); };
-      right.onclick = function(){ currentMonth++; if(currentMonth>12){ currentMonth=1; currentYear++; } render(); };
-      head.appendChild(left); head.appendChild(title); head.appendChild(right);
-      root.appendChild(head);
-
-      var grid = document.createElement('div'); grid.className='jp-grid';
-      var dows = ['ش','ی','د','س','چ','پ','ج'];
-      dows.forEach(function(n){ var c=document.createElement('div'); c.textContent=n; c.className='jp-cell jp-dow'; grid.appendChild(c); });
-
-      // First weekday index (0..6) for first day of month
-      var first = new persianDate([currentYear,currentMonth,1]).toDate(); // gregorian Date
-      var w = (first.getDay()+1)%7; // shift to start from Saturday
-      for(var i=0;i<w;i++){ var emp=document.createElement('div'); grid.appendChild(emp); }
-
-      var dim = new persianDate([currentYear,currentMonth,1]).daysInMonth();
-      var today = new persianDate(new Date());
-      for(var d=1; d<=dim; d++){
-        (function(day){
-          var cell = document.createElement('div'); cell.className='jp-cell'; cell.textContent=day;
-          if(day===today.date() && currentMonth===today.month() && currentYear===today.year()) cell.classList.add('jp-today');
-          if(day===selected.d && currentMonth===selected.m && currentYear===selected.y) cell.classList.add('jp-selected');
-          cell.onclick = function(){
-            selected = {y:currentYear,m:currentMonth,d:day};
-            input.value = fmtYMD([selected.y,selected.m,selected.d]);
-            close();
-            input.dispatchEvent(new Event('change'));
-          };
-          grid.appendChild(cell);
-        })(d);
-      }
-      root.appendChild(grid);
-    }
-
-    function close(){
-      if(root && root.parentNode){ document.body.removeChild(root); document.removeEventListener('click', onDoc); window.removeEventListener('resize', close); }
-    }
-    function onDoc(e){ if(!root.contains(e.target) && e.target!==input) close(); }
-
-    render();
-    document.body.appendChild(root);
-    setTimeout(function(){ document.addEventListener('click', onDoc); window.addEventListener('resize', close); }, 0);
-    return {close:close};
-  }
-
-  window.bindJalaliPicker = function(input, btn){
-    var open = null;
-    function show(){
-      if(open){ open.close(); open=null; }
-      open = buildPicker(input);
-    }
-    if(btn){
-      btn.addEventListener('click', function(ev){ ev.preventDefault(); show(); });
-    }else{
-      input.addEventListener('focus', show);
-    }
-  };
-
-  // Helper to set defaults & conversion
-  window.initLoanForm = async function(){
-    try{
-      // Fetch settings
-      var defDays = 14, renewDays = 7;
-      try{
-        const { data } = await supabase.from('settings').select('default_loan_days, default_renew_days').eq('id',1).maybeSingle();
-        if(data && typeof data.default_loan_days === 'number') defDays = data.default_loan_days;
-        if(data && typeof data.default_renew_days === 'number') renewDays = data.default_renew_days;
-      }catch(e){}
-
-      var nowPd = new persianDate(new Date());
-      var borrowedInput = document.getElementById('loan_borrowed');
-      var dueInput = document.getElementById('loan_due');
-      if(borrowedInput && !borrowedInput.value){ borrowedInput.value = nowPd.format('YYYY/MM/DD'); }
-      if(dueInput && !dueInput.value){
-        var g = new Date(); g.setDate(g.getDate() + defDays);
-        dueInput.value = new persianDate(g).format('YYYY/MM/DD');
-      }
-
-      var btnB = document.getElementById('btn_open_borrowed');
-      var btnD = document.getElementById('btn_open_due');
-      if(borrowedInput){ bindJalaliPicker(borrowedInput, btnB); }
-      if(dueInput){ bindJalaliPicker(dueInput, btnD); }
-
-      // store for renew defaults
-      window.__DEFAULT_RENEW_DAYS__ = renewDays;
-    }catch(e){ console.error(e); }
-  };
-})();
-</script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/flatpickr.min.css">
 
 </head>
 <body class="text-slate-100">
@@ -298,7 +168,8 @@
         <h3 class="font-bold mb-4">تنظیمات</h3>
         <form id="settingsForm" class="grid md:grid-cols-3 gap-4">
           <div><label>مدت پیش‌فرض امانت (روز)</label><input id="st_default_days" type="number" class="rounded-xl px-3 py-2 w-full" /></div>
-          <div class="md:col-span-3"><label>لوگوی سایت (اختیاری)</label><input id="st_logo" type="file" accept="image/*" /></div>
+          <div><label>مدت پیش‌فرض تمدید (روز)</label><input id="st_default_renew_days" type="number" class="rounded-xl px-3 py-2 w-full" /></div>
+<div class="md:col-span-3"><label>لوگوی سایت (اختیاری)</label><input id="st_logo" type="file" accept="image/*" /></div>
           <div class="md:col-span-3"><label>شعار بالای سایت</label><input id="st_tagline" class="rounded-xl px-3 py-2 w-full" placeholder="مثلاً: سامانه کتابخانه کانون..." /></div>
           <div class="md:col-span-3"><button class="px-4 py-2 rounded-xl bg-emerald-600">ذخیره تنظیمات</button></div>
         </form>
@@ -577,45 +448,145 @@ $('#loan_book_query')?.addEventListener('input', async (e)=>{
   $$('#loan_book_results button').forEach(b=> b.onclick = ()=>{ $('#loan_book_results').dataset.sel=b.dataset.id; toast('کتاب انتخاب شد'); });
 });
 
+
 async function loadLoans(){
   const { data, error } = await supabase
     .from('loans')
-    .select('id,book_id,member_id,borrowed_at,due_at,returned_at,renewals_count, members:member_id(first_name,last_name), books:book_id(title), admins:issued_by_admin_id(full_name)')
+    .select('id,borrowed_at,due_at,returned_at, renewals_count, members:member_id(first_name,last_name), books:book_id(title), admins:issued_by_admin_id(full_name)')
     .is('returned_at', null)
     .order('borrowed_at',{ascending:false});
   if(error) return toast(error.message);
 
   const now = new Date();
-  const overdue = [];
-  const active = [];
-  (data||[]).forEach(l=>{
-    if(new Date(l.due_at) < now) overdue.push(l); else active.push(l);
-  });
+  const overdues = (data||[]).filter(l => new Date(l.due_at) < now);
+  const actives = (data||[]).filter(l => new Date(l.due_at) >= now);
 
-  function card(l){
-    const name = ((l.members?.first_name||'')+' '+(l.members?.last_name||'')).trim() || '—';
-    return `
+  // Render overdue section (with warning style)
+  document.getElementById('loanListOverdue').innerHTML = overdues.map(l=>`
+    <div class="glass rounded-2xl p-4 border border-amber-400/40 bg-amber-500/10 space-y-2">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="font-bold">${l.books?.title||'—'}</div>
+          <div class="text-xs text-amber-200">⚠️ سررسید: ${fmtDate(l.due_at)}</div>
+          <div class="text-xs text-slate-300">مسئول: ${l.admins?.full_name||'—'} • امانت‌گیرنده: ${(l.members?.first_name||'')+' '+(l.members?.last_name||'')}</div>
+          <div class="text-xs text-slate-400">تاریخ امانت: ${fmtDate(l.borrowed_at)} • تمدیدها: ${l.renewals_count ?? 0}</div>
+        </div>
+        <div class="flex gap-2">
+          <button class="px-3 py-1 rounded-lg bg-slate-600" onclick="editLoan(${l.id})">ویرایش</button>
+          <button class="px-3 py-1 rounded-lg bg-indigo-600" onclick="renewLoan(${l.id})">تمدید</button>
+          <button class="px-3 py-1 rounded-lg bg-rose-600" onclick="returnLoan(${l.id})">بازگشت</button>
+        </div>
+      </div>
+    </div>`).join('');
+
+  // Render active list
+  document.getElementById('loanList').innerHTML = actives.map(l=>`
     <div class="glass rounded-2xl p-4 space-y-2">
       <div class="flex items-center justify-between">
         <div>
           <div class="font-bold">${l.books?.title||'—'}</div>
-          <div class="text-xs text-slate-300">مسئول: ${l.admins?.full_name||'—'} • امانت‌گیرنده: ${name}</div>
-          <div class="text-xs text-slate-400">تاریخ امانت: ${new persianDate(new Date(l.borrowed_at)).format('YYYY/MM/DD')} • سررسید: ${new persianDate(new Date(l.due_at)).format('YYYY/MM/DD')} • تمدیدها: ${l.renewals_count ?? 0}</div>
+          <div class="text-xs text-slate-300">مسئول: ${l.admins?.full_name||'—'} • امانت‌گیرنده: ${(l.members?.first_name||'')+' '+(l.members?.last_name||'')}</div>
+          <div class="text-xs text-slate-400">تاریخ امانت: ${fmtDate(l.borrowed_at)} • سررسید: ${fmtDate(l.due_at)} • تمدیدها: ${l.renewals_count ?? 0}</div>
         </div>
         <div class="flex gap-2">
-          <button class="px-3 py-1 rounded-lg bg-slate-600" onclick="openLoanEdit(${l.id})">ویرایش</button>
+          <button class="px-3 py-1 rounded-lg bg-slate-600" onclick="editLoan(${l.id})">ویرایش</button>
           <button class="px-3 py-1 rounded-lg bg-indigo-600" onclick="renewLoan(${l.id})">تمدید</button>
           <button class="px-3 py-1 rounded-lg bg-amber-600" onclick="returnLoan(${l.id})">بازگشت</button>
         </div>
       </div>
-    </div>`;
-  }
+    </div>`).join('');
+}
+  await supabase.from('loans').select('id,borrowed_at,due_at,returned_at, renewals_count, members:member_id(first_name,last_name), books:book_id(title), admins:issued_by_admin_id(full_name)').is('returned_at', null).order('borrowed_at',{ascending:false});
+  if(error) return toast(error.message);
+  $('#loanList').innerHTML = (data||[]).map(l=>`
+    <div class="glass rounded-2xl p-4 space-y-2">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="font-bold">${l.books?.title||'—'}</div>
+          <div class="text-xs text-slate-300">مسئول: ${l.admins?.full_name||'—'} • امانت‌گیرنده: ${(l.members?.first_name||'')+' '+(l.members?.last_name||'')}</div>
+          <div class="text-xs text-slate-400">تاریخ امانت: ${fmtDate(l.borrowed_at)} • سررسید: ${fmtDate(l.due_at)} • تمدیدها: ${l.renewals_count ?? 0}</div>
+        </div>
+        <div class="flex gap-2">
+          <button class="px-3 py-1 rounded-lg bg-slate-600" onclick="editLoan(${l.id})">ویرایش</button>
+          <button class="px-3 py-1 rounded-lg bg-amber-600" onclick="returnLoan(${l.id})">بازگشت</button>
+        </div>
+      </div>
+    </div>`).join('');
 
-  document.getElementById('loanListOverdue').innerHTML =
-    overdue.length ? overdue.map(card).join('') :
-    '<div class="text-sm text-slate-400">مورد معوقی وجود ندارد.</div>';
+async function editLoan(id){
+  const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
+  if(error || !l) { toast('یافت نشد'); return; }
+  const b = prompt('تاریخ امانت (YYYY/MM/DD - شمسی)', new persianDate(new Date(l.borrowed_at)).format('YYYY/MM/DD'));
+  const d = prompt('تاریخ سررسید (YYYY/MM/DD - شمسی)', new persianDate(new Date(l.due_at)).format('YYYY/MM/DD'));
+  const r = parseInt(prompt('تعداد تمدیدها', l.renewals_count ?? 0) || '0', 10);
+  let borrowed_at = l.borrowed_at, due_at = l.due_at;
+  try{ const pb = new persianDate(b.split('/').map(Number)).toGregorian(); borrowed_at = new Date(pb[0], pb[1]-1, pb[2], 12, 0, 0).toISOString(); }catch(e){}
+  try{ const pd = new persianDate(d.split('/').map(Number)).toGregorian(); due_at = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0).toISOString(); }catch(e){}
+  const { error: e2 } = await supabase.from('loans').update({ borrowed_at, due_at, renewals_count: r }).eq('id', id);
+  if(e2) return toast(e2.message); toast('به‌روزرسانی شد'); loadLoans();
+}
+async function returnLoan(id){
+  const { data, error } = await supabase.rpc('return_loan', { p_loan_id: id });
+  if (error) { toast(error.message || 'خطا در ثبت بازگشت'); return; }
+  toast('بازگشت ثبت شد'); loadCatalog(); loadLoans();
+}
 
-  document.getElementById('loanList').innerHTML = active.map(card).join('');
+async function readSheet(file){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = e=>{ const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'}); const ws = wb.Sheets[wb.SheetNames[0]]; const rows = XLSX.utils.sheet_to_json(ws, {defval:''}); resolve(rows); };
+    reader.onerror = reject; reader.readAsArrayBuffer(file);
+  });
+}
+$('#btnImportMembers')?.addEventListener('click', async ()=>{
+  const f = $('#fileMembers').files?.[0]; if(!f) return toast('فایل انتخاب نشده');
+  const rows = await readSheet(f);
+  const mapped = rows.map(r=>({
+    first_name: r.first_name||r['first name']||r['نام']||null,
+    last_name: r.last_name||r['last name']||r['نام خانوادگی']||null,
+    entry_year: parseInt(r.entry_year||r['entry year']||r['سال ورود'])||null,
+    degree: r.degree||r['مقطع']||null,
+    student_id: (r.student_id||r['student id']||r['شماره دانشجویی']||'').toString()||null,
+    phone: (r.phone||r['شماره تلفن']||'').toString()||null,
+    email: r.email||r['ایمیل']||null,
+  }));
+  const valid = mapped.filter(m=> m.first_name || m.last_name || m.student_id || m.email);
+  if(!valid.length) return toast('هیچ رکورد معتبری یافت نشد');
+  const { error } = await supabase.from('members').insert(valid);
+  if(error) return toast(error.message); toast('ایمپورت اعضا انجام شد'); loadMembers();
+});
+$('#btnImportBooks')?.addEventListener('click', async ()=>{
+  const f = $('#fileBooks').files?.[0]; if(!f) return toast('فایل انتخاب نشده');
+  const rows = await readSheet(f);
+  const mapped = rows.map(r=>({
+    title: r.title||r['عنوان']||'',
+    author: r.author||r['نویسنده']||null,
+    translator: r.translator||r['مترجم']||null,
+    pages: parseInt(r.pages||r['تعداد صفحات'])||null,
+    published_year: parseInt(r.published_year||r['سال انتشار'])||null,
+    subject: r.subject||r['موضوع']||null,
+    keywords: ((r.keywords||r['کلیدواژه‌ها']||'')+'').split(';').map(s=>s.trim()).filter(Boolean),
+    publisher: r.publisher||r['انتشارات']||null,
+    isbn: r.isbn||r['ISBN']||null,
+    total_copies: parseInt(r.total_copies||r['تعداد نسخه'])||1,
+    available_copies: parseInt(r.total_copies||r['تعداد نسخه'])||1,
+    cover_url: r.cover_url||null
+  }));
+  const valid = mapped.filter(b=> b.title);
+  if(!valid.length) return toast('هیچ رکورد معتبری یافت نشد');
+  const { error } = await supabase.from('books').insert(valid);
+  if(error) return toast(error.message); toast('ایمپورت کتاب‌ها انجام شد'); loadCatalog(); loadAdminBooks();
+});
+$('#btnExportBooks')?.addEventListener('click', async ()=>{ const { data } = await supabase.from('books').select('*'); download('books.csv', toCSV(data||[])); });
+$('#btnExportMembers')?.addEventListener('click', async ()=>{ const { data } = await supabase.from('members').select('*'); download('members.csv', toCSV(data||[])); });
+$('#btnExportLoans')?.addEventListener('click', async ()=>{ const { data } = await supabase.from('loans').select('id,book_id,member_id,borrowed_at,due_at,returned_at,renewals_count'); download('loans.csv', toCSV(data||[])); });
+
+async function loadSettings(){
+  const { data } = await supabase.from('settings').select('*').eq('id',1).maybeSingle();
+  $('#st_default_days').value = data?.default_loan_days ?? 14;
+  $('#st_tagline').value = data?.tagline || '';
+  if (data?.logo_url) { document.getElementById('logo').src = data.logo_url; document.getElementById('logo').classList.remove('hidden'); document.getElementById('logoFallback').classList.add('hidden'); }
+  if (data?.tagline) { document.getElementById('tagline').textContent = data.tagline; }
 }
 $('#settingsForm')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
@@ -721,38 +692,34 @@ document.getElementById('formMemberModal')?.addEventListener('submit', async (e)
 document.getElementById('btnAddMember')?.addEventListener('click', openAddMember);
 
 // === Loan edit via modal & datepickers ===
-async function openLoanEdit(id){
-  const { data: l, error } = await supabase.from('loans').select('*, members:member_id(id,first_name,last_name)').eq('id', id).maybeSingle();
+async function editLoan(id){
+  const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
   if(error || !l){ toast('یافت نشد'); return; }
   document.getElementById('ml_id').value = l.id;
-  try{ document.getElementById('ml_borrowed').value = new persianDate(new Date(l.borrowed_at)).format('YYYY/MM/DD'); }catch(e){ document.getElementById('ml_borrowed').value=''; }
-  try{ document.getElementById('ml_due').value = new persianDate(new Date(l.due_at)).format('YYYY/MM/DD'); }catch(e){ document.getElementById('ml_due').value=''; }
+  // Pre-fill Persian dates
+  try{
+    document.getElementById('ml_borrowed').value = new persianDate(new Date(l.borrowed_at)).format('YYYY/MM/DD');
+  }catch(e){ document.getElementById('ml_borrowed').value=''; }
+  try{
+    document.getElementById('ml_due').value = new persianDate(new Date(l.due_at)).format('YYYY/MM/DD');
+  }catch(e){ document.getElementById('ml_due').value=''; }
   document.getElementById('ml_renewals').value = (l.renewals_count ?? 0);
-  // Member search prefill
-  const mbox = document.getElementById('ml_member_box');
-  const msel = document.getElementById('ml_member_sel');
-  msel.value = l.member_id;
-  mbox.textContent = (l.members?.first_name||'')+' '+(l.members?.last_name||'');
   openModal('modalLoan');
-  if(typeof bindJalaliPicker==='function'){
-    bindJalaliPicker(document.getElementById('ml_borrowed'));
-    bindJalaliPicker(document.getElementById('ml_due'));
-  }
+  initPersianPicker('#ml_borrowed'); initPersianPicker('#ml_due');
 }
+
 document.getElementById('formLoanModal')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const id = parseInt(document.getElementById('ml_id').value,10);
   const b = document.getElementById('ml_borrowed').value.trim();
   const d = document.getElementById('ml_due').value.trim();
   const r = parseInt(document.getElementById('ml_renewals').value,10) || 0;
-  const memberIdStr = document.getElementById('ml_member_sel').value;
   let borrowed_at = null, due_at = null;
   try{ const pb = new persianDate(b.split('/').map(Number)).toGregorian(); borrowed_at = new Date(pb[0], pb[1]-1, pb[2], 12, 0, 0).toISOString(); }catch(e){}
   try{ const pd = new persianDate(d.split('/').map(Number)).toGregorian(); due_at = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0).toISOString(); }catch(e){}
   const payload = { renewals_count: r };
   if(borrowed_at) payload.borrowed_at = borrowed_at;
   if(due_at) payload.due_at = due_at;
-  if(memberIdStr) payload.member_id = parseInt(memberIdStr,10);
   const { error } = await supabase.from('loans').update(payload).eq('id', id);
   if(error){ toast(error.message); return; }
   toast('به‌روزرسانی شد'); closeModal('modalLoan'); loadLoans();
@@ -819,7 +786,6 @@ document.getElementById('formLoanModal')?.addEventListener('submit', async (e)=>
         <button class="px-2 py-1 rounded-lg bg-slate-700" onclick="closeModal('modalLoan')">✕</button>
       </div>
       <form id="formLoanModal" class="grid md:grid-cols-2 gap-4">
-        <div class="md:col-span-2"><label>عضو</label><div class="flex items-center gap-2"><input id="ml_member_query" class="rounded-xl px-3 py-2 w-full" placeholder="نام/نام‌خانوادگی/شماره دانشجویی" autocomplete="off" /><select id="ml_member_sel" class="rounded-xl px-3 py-2"><option value="">— انتخاب —</option></select></div><div id="ml_member_box" class="text-xs text-slate-400 mt-1"></div></div>
         <input type="hidden" id="ml_id" />
         <div><label>تاریخ امانت (هجری شمسی)</label><input id="ml_borrowed" class="rounded-xl px-3 py-2 w-full" /></div>
         <div><label>تاریخ سررسید (هجری شمسی)</label><input id="ml_due" class="rounded-xl px-3 py-2 w-full" /></div>
@@ -1004,32 +970,100 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
+<script src="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/flatpickr.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/l10n/jalaliDate.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/l10n/fa.js"></script>
 <script>
-// Modal member search
-document.getElementById('ml_member_query')?.addEventListener('input', async (e)=>{
-  const q = e.target.value.trim();
-  const sel = document.getElementById('ml_member_sel');
-  sel.innerHTML = '<option value="">— انتخاب —</option>';
-  if(!q) return;
-  let { data } = await supabase.from('members').select('id,first_name,last_name,student_id').or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,student_id.ilike.%${q}%`).limit(10);
-  (data||[]).forEach(m=>{
-    const opt = document.createElement('option');
-    opt.value = m.id; opt.textContent = (m.first_name||'')+' '+(m.last_name||'')+' • '+(m.student_id||'');
-    sel.appendChild(opt);
-  });
-});
-
-// Initialize loan form defaults and pickers when the Loans tab opens
-document.addEventListener('DOMContentLoaded', ()=>{
-  const btn = document.querySelector('[data-tab="admin-loans"]');
-  if(btn){
-    btn.addEventListener('click', ()=> setTimeout(()=>{ if(typeof initLoanForm==='function') initLoanForm(); }, 60));
+// Flatpickr + Jalali init for borrowed/due fields + calendar buttons
+document.addEventListener('DOMContentLoaded', function(){
+  function bind(){
+    if(!window.flatpickr) return;
+    var base = {
+      disableMobile: false,
+      dateFormat: "Y/m/d",
+      // use Persian locale if available
+      locale: (flatpickr.l10ns && flatpickr.l10ns.fa) ? flatpickr.l10ns.fa : undefined
+    };
+    var borrowed = document.querySelector('#loan_borrowed');
+    var due = document.querySelector('#loan_due');
+    if(borrowed && !borrowed._fp){
+      borrowed._fp = flatpickr(borrowed, Object.assign({}, base, { }));
+    }
+    if(due && !due._fp){
+      due._fp = flatpickr(due, Object.assign({}, base, { }));
+    }
+    // Buttons
+    [['btn_open_borrowed', borrowed], ['btn_open_due', due]].forEach(function([btnId, input]){
+      var btn = document.getElementById(btnId);
+      if(btn && input && !btn.dataset.bound){
+        btn.addEventListener('click', function(e){
+          e.preventDefault();
+          if(input._fp){ input._fp.open(); }
+          else{ input.focus(); }
+        });
+        btn.dataset.bound = '1';
+      }
+    });
   }
-  // Run once if already visible
-  setTimeout(()=>{ if(typeof initLoanForm==='function') initLoanForm(); }, 120);
+  bind();
+  // Rebind when loans tab toggles visibility
+  var tab = document.getElementById('tab-admin-loans');
+  if(tab){
+    var mo = new MutationObserver(function(){ bind(); });
+    mo.observe(tab, {attributes:true, attributeFilter:['class','style']});
+  }
 });
 </script>
 
-<script>document.addEventListener('DOMContentLoaded', function(){ try{ lucide.createIcons(); }catch(e){} });</script>
+
+<script>
+// Initialize defaults for loan form (Hijri Shamsi dates)
+async function initLoanForm(){
+  try{
+    const borrowedEl = document.getElementById('loan_borrowed');
+    const dueEl = document.getElementById('loan_due');
+    if(!(borrowedEl && dueEl && window.persianDate)) return;
+    // Fetch settings
+    const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
+    const days = st?.default_loan_days || 14;
+    // Today in Persian calendar
+    const today = new persianDate().format('YYYY/MM/DD');
+    // Due = today + days
+    const due = new persianDate().add('days', days).format('YYYY/MM/DD');
+    if(!borrowedEl.value){ borrowedEl.value = today; }
+    if(!dueEl.value){ dueEl.value = due; }
+  }catch(e){ console.error('initLoanForm', e); }
+}
+</script>
+
+
+<script>
+async function renewLoan(id){
+  try{
+    // Load loan and settings
+    const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
+    if(error || !l){ toast('یافت نشد'); return; }
+    const { data: st } = await supabase.from('settings').select('default_renew_days').eq('id',1).maybeSingle();
+    const addDays = st?.default_renew_days || 7;
+    const currentDue = new Date(l.due_at);
+    const def = new persianDate(new Date(currentDue.getTime() + addDays*24*3600*1000)).format('YYYY/MM/DD');
+    const ans = prompt('تاریخ جدید سررسید (YYYY/MM/DD - شمسی)', def);
+    if(!ans) return;
+    let newDueISO = l.due_at;
+    try{
+      const parts = ans.replaceAll('-', '/').split('/').map(Number);
+      const pd = new persianDate([parts[0], parts[1], parts[2]]).toGregorian();
+      const g = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0);
+      newDueISO = g.toISOString();
+    }catch(e){}
+    const newCount = (l.renewals_count ?? 0) + 1;
+    const { error: e2 } = await supabase.from('loans').update({ due_at: newDueISO, renewals_count: newCount }).eq('id', id);
+    if(e2){ toast(e2.message); return; }
+    toast('تمدید شد'); loadLoans();
+  }catch(e){ console.error(e); toast('خطا در تمدید'); }
+}
+</script>
+
+<script>document.addEventListener('DOMContentLoaded',()=>{try{lucide?.createIcons?.();}catch(e){}});</script>
 </body>
 </html>
