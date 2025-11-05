@@ -555,8 +555,56 @@ async function loadLoans(){
 }
 
 
+
 async function extendLoan(id){
-  // Load loan & defaults  };
+  // Load loan & defaults
+  const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
+  if(error || !l){ toast('یافت نشد'); return; }
+  const { data: st } = await supabase.from('settings').select('default_renew_days').eq('id',1).maybeSingle();
+  const addDays = st?.default_renew_days || 7;
+
+  const base = l.due_at ? new Date(l.due_at) : new Date();
+  const newDue = new Date(base.getTime() + addDays*24*3600*1000);
+
+  const modal = document.getElementById('extend-modal');
+  const inp = document.getElementById('extend_due');
+  const btnOk = document.getElementById('extend_ok');
+  const btnCancel = document.getElementById('extend_cancel');
+
+  // Prefill Jalaali text
+  try{
+    const j = g2j(newDue.getFullYear(), newDue.getMonth()+1, newDue.getDate());
+    inp.value = fmtJ(j[0], j[1], j[2]);
+  }catch(_){ inp.value = ''; }
+
+  // Initialize datepicker same as loan_due
+  try{
+    const loanDue = document.getElementById('loan_due');
+    if (loanDue && loanDue._flatpickr && window.flatpickr) {
+      const cfg = Object.assign({}, loanDue._flatpickr.config);
+      if (inp._flatpickr) inp._flatpickr.destroy();
+      window.flatpickr(inp, cfg);
+      inp._flatpickr.setDate(newDue, true);
+    }
+  }catch(_){}
+
+  // Show modal
+  modal.classList.remove('hidden'); modal.classList.add('flex');
+
+  const handlerOk = async ()=>{
+    const parts = (inp.value||'').replaceAll('-', '/').split('/').map(s=>parseInt(s,10));
+    if(parts.length<3 || parts.some(isNaN)){ toast('تاریخ نامعتبر'); return; }
+    const g = j2g(parts[0], parts[1], parts[2]);
+    const due_at = new Date(g[0], g[1]-1, g[2], 12, 0, 0);
+    const payload = { due_at: due_at.toISOString(), renewals_count: (l.renewals_count||0) + 1 };
+    const { error: e2 } = await supabase.from('loans').update(payload).eq('id', id);
+    if(e2){ toast(e2.message); return; }
+    toast('تمدید شد');
+    modal.classList.add('hidden'); modal.classList.remove('flex');
+    btnOk.removeEventListener('click', handlerOk);
+    btnCancel.removeEventListener('click', handlerCancel);
+    loadLoans();
+  };
   const handlerCancel = ()=>{
     modal.classList.add('hidden'); modal.classList.remove('flex');
     btnOk.removeEventListener('click', handlerOk);
@@ -566,7 +614,6 @@ async function extendLoan(id){
   btnOk.addEventListener('click', handlerOk);
   btnCancel.addEventListener('click', handlerCancel);
 }
-
 async function returnLoan(id){
   const { data, error } = await supabase.rpc('return_loan', { p_loan_id: id });
   if (error) { toast(error.message || 'خطا در ثبت بازگشت'); return; }
@@ -1218,6 +1265,34 @@ function initJalaliPicker(selector){
       });
     }
   }catch(_){}
+}
+</script>
+
+
+<script>
+async function setDefaultLoanDates(){
+  try{
+    const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
+    const days = st?.default_loan_days || 14;
+    const now = new Date();
+    const due = new Date(now.getTime() + days*24*3600*1000);
+
+    const bEl = document.getElementById('loan_borrowed');
+    const dEl = document.getElementById('loan_due');
+    if(!bEl || !dEl) return;
+
+    // Set input values as Jalali text
+    const bj = g2j(now.getFullYear(), now.getMonth()+1, now.getDate());
+    const dj = g2j(due.getFullYear(), due.getMonth()+1, due.getDate());
+    if(bEl) bEl.value = fmtJ(bj[0], bj[1], bj[2]);
+    if(dEl) dEl.value = fmtJ(dj[0], dj[1], dj[2]);
+
+    // If flatpickr is bound, setDate using Gregorian Date objects
+    try{
+      if (bEl._flatpickr && window.flatpickr){ bEl._flatpickr.setDate(now, true); }
+      if (dEl._flatpickr && window.flatpickr){ dEl._flatpickr.setDate(due, true); }
+    }catch(_){}
+  }catch(e){}
 }
 </script>
 
