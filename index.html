@@ -49,7 +49,20 @@
         <div class="text-sm text-slate-300/80">تعداد: <span class="px-2 py-1 rounded-lg chip" id="catalogCount">—</span></div>
       </div>
       <div id="catalogList" class="grid lg:grid-cols-2 gap-3"></div>
-    </section>
+    
+<!-- ==== Loans UI rewrite containers ==== -->
+<div id="loanLists" class="loan-section">
+  <div id="overdue-wrap" class="overdue-wrap" style="display:none">
+    <div class="overdue-title">امانت‌های معوق (گذشته از سررسید)</div>
+    <div id="loanListOverdue" class="loan-list"></div>
+  </div>
+  <div class="loan-section">
+    <div class="loan-header"><div>امانت‌های فعال</div></div>
+    <div id="loanListActive" class="loan-list"></div>
+  </div>
+</div>
+
+</section>
 
     <section id="adminShell" class="hidden">
       <div class="flex flex-wrap gap-2 mb-4">
@@ -965,6 +978,172 @@ document.addEventListener('DOMContentLoaded', function(){
     mo.observe(tab, {attributes:true, attributeFilter:['class','style']});
   }
 });
+</script>
+
+
+<script>
+(function(){
+  // Config (override-able from settings/localStorage)
+  function getInt(key, def){ try{ var v = parseInt(localStorage.getItem(key)||''); return isNaN(v)? def : v; }catch(e){ return def; } }
+  var DEFAULT_DUE_DAYS = getInt('cfg_due_days', 14);     // پیش‌فرض دو هفته
+  var DEFAULT_RENEW_DAYS = getInt('cfg_renew_days', 7);  // پیش‌فرض یک هفته
+
+  // Utils
+  function fmt(d){ // format yyyy/mm/dd in Jalali-aware Flatpickr: we use Y/m/d; relying on plugin to show Jalali
+    const y = d.getFullYear(); const m=('0'+(d.getMonth()+1)).slice(-2); const da=('0'+d.getDate()).slice(-2);
+    return y+'/'+m+'/'+da;
+  }
+  function today(){ return new Date(); }
+  function addDays(date, days){ var d=new Date(date.getTime()); d.setDate(d.getDate()+days); return d; }
+
+  // Init defaults on pickers if present (Flatpickr already initialized earlier)
+  function setPickerDefault(sel, date){
+    var el = document.querySelector(sel);
+    if(!el) return;
+    if (el._fp && typeof el._fp.setDate==='function'){
+      el._fp.setDate(date, true);
+    }else{
+      el.value = fmt(date);
+    }
+  }
+
+  // Loan list rendering
+  var listActive = document.getElementById('loanListActive');
+  var listOverdue = document.getElementById('loanListOverdue');
+  var overdueWrap = document.getElementById('overdue-wrap');
+  var loans = []; // in-memory for frontend; backend integration can hook into events below
+
+  function isOverdue(loan){
+    var now = new Date();
+    return loan.dueAt < new Date(now.getFullYear(), now.getMonth(), now.getDate()+1); // due before today
+  }
+
+  function render(){
+    // sort by borrowedAt desc (new to old)
+    loans.sort(function(a,b){ return b.borrowedAt - a.borrowedAt; });
+    [listActive, listOverdue].forEach(function(x){ if(x) x.innerHTML=''; });
+
+    var anyOver = false;
+    loans.forEach(function(ln){
+      var card = document.createElement('div');
+      card.className = 'loan-card';
+      card.dataset.id = ln.id;
+      var meta = document.createElement('div'); meta.className='meta';
+      meta.innerHTML = '<strong>' + ln.memberName + '</strong>'
+                     + '<span>ثبت: ' + ln.borrowedStr + ' • سررسید: ' + ln.dueStr + '</span>';
+      var actions = document.createElement('div'); actions.className='actions';
+      var btnBack = document.createElement('button'); btnBack.className='btn danger'; btnBack.textContent='بازگشت';
+      var btnEdit = document.createElement('button'); btnEdit.className='btn'; btnEdit.textContent='ویرایش';
+      var btnRenew = document.createElement('button'); btnRenew.className='btn warn'; btnRenew.textContent='تمدید';
+
+      btnBack.addEventListener('click', function(){
+        // Fire a custom event for backend hook
+        document.dispatchEvent(new CustomEvent('loan:return', {detail: ln}));
+        // Remove from UI
+        loans = loans.filter(function(x){ return x.id !== ln.id; });
+        render();
+      });
+
+      btnEdit.addEventListener('click', function(){
+        openEditModal(ln);
+      });
+
+      btnRenew.addEventListener('click', function(){
+        // default: one week after current due (configurable)
+        var suggested = addDays(ln.dueAt, DEFAULT_RENEW_DAYS);
+        openRenewModal(ln, suggested);
+      });
+
+      actions.appendChild(btnBack); actions.appendChild(btnEdit); actions.appendChild(btnRenew);
+      card.appendChild(meta); card.appendChild(actions);
+
+      if(isOverdue(ln)){
+        anyOver = true;
+        listOverdue.appendChild(card);
+      }else{
+        listActive.appendChild(card);
+      }
+    });
+    overdueWrap.style.display = anyOver ? '' : 'none';
+  }
+
+  // Modals (simple prompt-based fallbacks to stay minimal if no modal HTML)
+  function openEditModal(ln){
+    var name = prompt('نام امانت‌گیرنده:', ln.memberName);
+    if(name === null) return;
+    // Borrowed date
+    var bstr = prompt('تاریخ ثبت (YYYY/MM/DD - جلالی):', ln.borrowedStr);
+    if(bstr === null) return;
+    var dstr = prompt('تاریخ سررسید (YYYY/MM/DD - جلالی):', ln.dueStr);
+    if(dstr === null) return;
+
+    // For now, trust Flatpickr format; convert to Date by splitting (assuming Y/m/d in Gregorian; your backend should convert as needed)
+    function parseYmd(s){
+      var p = s.split('/'); if(p.length!==3) return new Date();
+      return new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
+    }
+    ln.memberName = name;
+    ln.borrowedAt = parseYmd(bstr);
+    ln.dueAt = parseYmd(dstr);
+    ln.borrowedStr = bstr;
+    ln.dueStr = dstr;
+
+    document.dispatchEvent(new CustomEvent('loan:edit', {detail: ln}));
+    render();
+  }
+
+  function openRenewModal(ln, suggested){
+    var dstr = prompt('تمدید تا تاریخ (YYYY/MM/DD - جلالی):', fmt(suggested));
+    if(dstr === null) return;
+    var p = dstr.split('/');
+    var d = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
+    ln.dueAt = d;
+    ln.dueStr = dstr;
+    document.dispatchEvent(new CustomEvent('loan:renew', {detail: ln}));
+    render();
+  }
+
+  // Hook into the loan form submit
+  document.addEventListener('DOMContentLoaded', function(){
+    // defaults
+    setPickerDefault('#loan_borrowed', today());
+    setPickerDefault('#loan_due', addDays(today(), DEFAULT_DUE_DAYS));
+
+    var form = document.getElementById('loanForm') || document.querySelector('form#loanForm');
+    if(form){
+      form.addEventListener('submit', function(e){
+        // Allow backend submit to proceed, but also reflect in UI if successful later.
+        // If you prefer to block default and do async RPC, uncomment next line.
+        // e.preventDefault();
+
+        // Read member name (try multiple selectors)
+        var nameEl = document.querySelector('#loan_member') || form.querySelector('input[name="member_name"]') || form.querySelector('input[placeholder*="نام"]');
+        var memberName = nameEl ? (nameEl.value || '---') : '---';
+
+        var bEl = document.querySelector('#loan_borrowed');
+        var dEl = document.querySelector('#loan_due');
+        var bStr = bEl && bEl.value ? bEl.value : fmt(today());
+        var dStr = dEl && dEl.value ? dEl.value : fmt(addDays(today(), DEFAULT_DUE_DAYS));
+
+        var parse = function(s){ var p=s.split('/'); return new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2])); };
+        var loan = {
+          id: Date.now().toString(36),
+          memberName: memberName,
+          borrowedStr: bStr,
+          dueStr: dStr,
+          borrowedAt: parse(bStr),
+          dueAt: parse(dStr)
+        };
+        // Let backend listen and persist
+        document.dispatchEvent(new CustomEvent('loan:create', {detail: loan}));
+
+        // Optimistically render in UI (frontend)
+        loans.push(loan);
+        render();
+      });
+    }
+  });
+})();
 </script>
 
 </body>
