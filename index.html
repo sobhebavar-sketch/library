@@ -168,8 +168,8 @@
         <h3 class="font-bold mb-4">تنظیمات</h3>
         <form id="settingsForm" class="grid md:grid-cols-3 gap-4">
           <div><label>مدت پیش‌فرض امانت (روز)</label><input id="st_default_days" type="number" class="rounded-xl px-3 py-2 w-full" /></div>
-          <div><label>مدت پیش‌فرض تمدید (روز)</label><input id="st_default_renew_days" type="number" class="rounded-xl px-3 py-2 w-full" /></div>
-<div class="md:col-span-3"><label>لوگوی سایت (اختیاری)</label><input id="st_logo" type="file" accept="image/*" /></div>
+          <div><label>مدت پیش‌فرض تمدید (روز)</label><input id="st_renew_days" type="number" class="rounded-xl px-3 py-2 w-full" /></div>
+          <div class="md:col-span-3"><label>لوگوی سایت (اختیاری)</label><input id="st_logo" type="file" accept="image/*" /></div>
           <div class="md:col-span-3"><label>شعار بالای سایت</label><input id="st_tagline" class="rounded-xl px-3 py-2 w-full" placeholder="مثلاً: سامانه کتابخانه کانون..." /></div>
           <div class="md:col-span-3"><button class="px-4 py-2 rounded-xl bg-emerald-600">ذخیره تنظیمات</button></div>
         </form>
@@ -188,7 +188,16 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const $ = (sel)=> document.querySelector(sel);
 const $$ = (sel)=> Array.from(document.querySelectorAll(sel));
-const fmtDate = (s)=> new Date(s).toLocaleDateString('fa-IR');
+const fmtDate = (s)=>{
+  try{
+    if(window.persianDate){
+      return new persianDate(new Date(s)).format('YYYY/MM/DD');
+    }
+  }catch(e){}
+  try{
+    return new Date(s).toLocaleDateString('fa-IR');
+  }catch(e){ return s||'—'; }
+};
 const toast = (msg)=>{ const el=document.createElement('div'); el.className='fixed bottom-4 right-4 bg-black/80 text-white px-3 py-2 rounded-xl text-sm'; el.textContent=msg; document.body.appendChild(el); setTimeout(()=>el.remove(),3000); };
 
 function toCSV(rows){
@@ -260,6 +269,7 @@ function selectTab(name){
   $('#tab-'+name)?.classList.remove('hidden');
   $$('.tab').forEach(b=> b.classList.remove('bg-white/10'));
   document.querySelector(`[data-tab="${name}"]`)?.classList.add('bg-white/10');
+  if(name==='admin-loans'){ setDefaultLoanDates(); }
 }
 
 $('#btnSearch').onclick = ()=> loadCatalog($('#search').value.trim());
@@ -402,12 +412,27 @@ async function deleteMember(id){
   if(error) return toast(error.message); toast('حذف شد'); loadMembers();
 }
 
+
 $('#loanForm')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const memberId = $('#loan_member_results')?.dataset.sel;
   const bookId = $('#loan_book_results')?.dataset.sel;
   if(!memberId || !bookId) { toast('عضو و کتاب را انتخاب کنید'); return; }
 
+  // Borrowed date (Jalali) -> Gregorian ISO
+  let borrowed_at_iso;
+  const bStr = $('#loan_borrowed').value?.trim();
+  if (bStr) {
+    try {
+      const parts = bStr.replaceAll('-', '/').split('/').map(x=>parseInt(x,10));
+      const pb = new persianDate([parts[0], parts[1], parts[2]]).toGregorian();
+      const gb = new Date(pb[0], pb[1]-1, pb[2], 12, 0, 0);
+      borrowed_at_iso = gb.toISOString();
+    } catch(e){}
+  }
+  if(!borrowed_at_iso){ borrowed_at_iso = new Date().toISOString(); }
+
+  // Due date (Jalali) -> Gregorian ISO
   let due_at_iso;
   const dueStr = $('#loan_due').value?.trim();
   if (dueStr) {
@@ -424,14 +449,47 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
     due_at_iso = new Date(Date.now() + days*24*3600*1000).toISOString();
   }
 
-  const { data: loan, error } = await supabase.rpc('issue_loan', {
+  // Try RPC with borrowed_at support first; fallback if arg not accepted
+  let rpcError = null, loan = null;
+  let payload = {
     p_book_id: parseInt(bookId, 10),
     p_member_id: parseInt(memberId, 10),
     p_admin_id: user.id,
-    p_due_at: due_at_iso
-  });
-  if (error) { toast(error.message || 'خطا در ثبت امانت'); return; }
+    p_due_at: due_at_iso,
+    p_borrowed_at: borrowed_at_iso
+  };
+  let res = await supabase.rpc('issue_loan', payload);
+  if(res.error){
+    // Retry without p_borrowed_at
+    payload = {
+      p_book_id: parseInt(bookId, 10),
+      p_member_id: parseInt(memberId, 10),
+      p_admin_id: user.id,
+      p_due_at: due_at_iso
+    };
+    res = await supabase.rpc('issue_loan', payload);
+    if(res.error){ toast(res.error.message || 'خطا در ثبت امانت'); return; }
+    loan = res.data;
+    // If loan id returned, update borrowed_at explicitly
+    try{
+      if(loan && loan.id){
+        await supabase.from('loans').update({ borrowed_at: borrowed_at_iso }).eq('id', loan.id);
+      }
+    }catch(e){}
+  }else{
+    loan = res.data;
+    // If server didn't set borrowed_at, update
+    try{
+      if(loan && loan.id){
+        await supabase.from('loans').update({ borrowed_at: borrowed_at_iso }).eq('id', loan.id);
+      }
+    }catch(e){}
+  }
+
   toast('امانت ثبت شد');
+  // Reset quick inputs
+  $('#loan_member_results').innerHTML=''; $('#loan_member_results').dataset.sel='';
+  $('#loan_book_results').innerHTML=''; $('#loan_book_results').dataset.sel='';
   loadCatalog(); loadLoans();
 });
 
@@ -458,29 +516,28 @@ async function loadLoans(){
   if(error) return toast(error.message);
 
   const now = new Date();
-  const overdues = (data||[]).filter(l => new Date(l.due_at) < now);
-  const actives = (data||[]).filter(l => new Date(l.due_at) >= now);
+  const overdue = (data||[]).filter(l => l.due_at && new Date(l.due_at) < now);
+  const active = (data||[]).filter(l => !l.due_at || new Date(l.due_at) >= now);
 
-  // Render overdue section (with warning style)
-  document.getElementById('loanListOverdue').innerHTML = overdues.map(l=>`
-    <div class="glass rounded-2xl p-4 border border-amber-400/40 bg-amber-500/10 space-y-2">
+  // Overdue list
+  $('#loanListOverdue').innerHTML = overdue.map(l=>`
+    <div class="glass rounded-2xl p-4 border border-amber-400/30 bg-amber-500/5 space-y-2">
       <div class="flex items-center justify-between">
         <div>
-          <div class="font-bold">${l.books?.title||'—'}</div>
-          <div class="text-xs text-amber-200">⚠️ سررسید: ${fmtDate(l.due_at)}</div>
+          <div class="font-bold text-amber-300">⚠️ ${l.books?.title||'—'}</div>
           <div class="text-xs text-slate-300">مسئول: ${l.admins?.full_name||'—'} • امانت‌گیرنده: ${(l.members?.first_name||'')+' '+(l.members?.last_name||'')}</div>
-          <div class="text-xs text-slate-400">تاریخ امانت: ${fmtDate(l.borrowed_at)} • تمدیدها: ${l.renewals_count ?? 0}</div>
+          <div class="text-xs text-slate-400">تاریخ امانت: ${fmtDate(l.borrowed_at)} • سررسید: ${fmtDate(l.due_at)} • تمدیدها: ${l.renewals_count ?? 0}</div>
         </div>
         <div class="flex gap-2">
           <button class="px-3 py-1 rounded-lg bg-slate-600" onclick="editLoan(${l.id})">ویرایش</button>
-          <button class="px-3 py-1 rounded-lg bg-indigo-600" onclick="renewLoan(${l.id})">تمدید</button>
-          <button class="px-3 py-1 rounded-lg bg-rose-600" onclick="returnLoan(${l.id})">بازگشت</button>
+          <button class="px-3 py-1 rounded-lg bg-indigo-600" onclick="extendLoan(${l.id})">تمدید</button>
+          <button class="px-3 py-1 rounded-lg bg-amber-600" onclick="returnLoan(${l.id})">بازگشت</button>
         </div>
       </div>
     </div>`).join('');
 
-  // Render active list
-  document.getElementById('loanList').innerHTML = actives.map(l=>`
+  // Active list
+  $('#loanList').innerHTML = active.map(l=>`
     <div class="glass rounded-2xl p-4 space-y-2">
       <div class="flex items-center justify-between">
         <div>
@@ -490,29 +547,12 @@ async function loadLoans(){
         </div>
         <div class="flex gap-2">
           <button class="px-3 py-1 rounded-lg bg-slate-600" onclick="editLoan(${l.id})">ویرایش</button>
-          <button class="px-3 py-1 rounded-lg bg-indigo-600" onclick="renewLoan(${l.id})">تمدید</button>
+          <button class="px-3 py-1 rounded-lg bg-indigo-600" onclick="extendLoan(${l.id})">تمدید</button>
           <button class="px-3 py-1 rounded-lg bg-amber-600" onclick="returnLoan(${l.id})">بازگشت</button>
         </div>
       </div>
     </div>`).join('');
 }
-  await supabase.from('loans').select('id,borrowed_at,due_at,returned_at, renewals_count, members:member_id(first_name,last_name), books:book_id(title), admins:issued_by_admin_id(full_name)').is('returned_at', null).order('borrowed_at',{ascending:false});
-  if(error) return toast(error.message);
-  $('#loanList').innerHTML = (data||[]).map(l=>`
-    <div class="glass rounded-2xl p-4 space-y-2">
-      <div class="flex items-center justify-between">
-        <div>
-          <div class="font-bold">${l.books?.title||'—'}</div>
-          <div class="text-xs text-slate-300">مسئول: ${l.admins?.full_name||'—'} • امانت‌گیرنده: ${(l.members?.first_name||'')+' '+(l.members?.last_name||'')}</div>
-          <div class="text-xs text-slate-400">تاریخ امانت: ${fmtDate(l.borrowed_at)} • سررسید: ${fmtDate(l.due_at)} • تمدیدها: ${l.renewals_count ?? 0}</div>
-        </div>
-        <div class="flex gap-2">
-          <button class="px-3 py-1 rounded-lg bg-slate-600" onclick="editLoan(${l.id})">ویرایش</button>
-          <button class="px-3 py-1 rounded-lg bg-amber-600" onclick="returnLoan(${l.id})">بازگشت</button>
-        </div>
-      </div>
-    </div>`).join('');
-
 async function editLoan(id){
   const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
   if(error || !l) { toast('یافت نشد'); return; }
@@ -524,6 +564,35 @@ async function editLoan(id){
   try{ const pd = new persianDate(d.split('/').map(Number)).toGregorian(); due_at = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0).toISOString(); }catch(e){}
   const { error: e2 } = await supabase.from('loans').update({ borrowed_at, due_at, renewals_count: r }).eq('id', id);
   if(e2) return toast(e2.message); toast('به‌روزرسانی شد'); loadLoans();
+}
+
+async function extendLoan(id){
+  // Get current loan
+  const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
+  if(error || !l){ toast('یافت نشد'); return; }
+  // Get default renew days
+  const { data: st } = await supabase.from('settings').select('default_renew_days').eq('id',1).maybeSingle();
+  const addDays = st?.default_renew_days || 7;
+  const base = l.due_at ? new Date(l.due_at) : new Date();
+  const newDue = new Date(base.getTime() + addDays*24*3600*1000);
+
+  // Prompt with default Jalali date, allow change
+  let defStr;
+  try{ defStr = new persianDate(newDue).format('YYYY/MM/DD'); }catch(e){
+    defStr = `${newDue.getFullYear()}/${(newDue.getMonth()+1).toString().padStart(2,'0')}/${newDue.getDate().toString().padStart(2,'0')}`;
+  }
+  const ans = prompt('تاریخ جدید سررسید (YYYY/MM/DD - شمسی)', defStr);
+  if(ans===null) return;
+  let due_at = newDue;
+  try{
+    const parts = ans.split('/').map(Number);
+    const pd = new persianDate([parts[0], parts[1], parts[2]]).toGregorian();
+    due_at = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0);
+  }catch(e){}
+  const payload = { due_at: due_at.toISOString(), renewals_count: (l.renewals_count||0) + 1 };
+  const { error: e2 } = await supabase.from('loans').update(payload).eq('id', id);
+  if(e2){ toast(e2.message); return; }
+  toast('تمدید شد'); loadLoans();
 }
 async function returnLoan(id){
   const { data, error } = await supabase.rpc('return_loan', { p_loan_id: id });
@@ -584,6 +653,7 @@ $('#btnExportLoans')?.addEventListener('click', async ()=>{ const { data } = awa
 async function loadSettings(){
   const { data } = await supabase.from('settings').select('*').eq('id',1).maybeSingle();
   $('#st_default_days').value = data?.default_loan_days ?? 14;
+  $('#st_renew_days').value = data?.default_renew_days ?? 7;
   $('#st_tagline').value = data?.tagline || '';
   if (data?.logo_url) { document.getElementById('logo').src = data.logo_url; document.getElementById('logo').classList.remove('hidden'); document.getElementById('logoFallback').classList.add('hidden'); }
   if (data?.tagline) { document.getElementById('tagline').textContent = data.tagline; }
@@ -601,6 +671,7 @@ $('#settingsForm')?.addEventListener('submit', async (e)=>{
   const payload = {
     id: 1,
     default_loan_days: parseInt(document.getElementById('st_default_days').value,10)||14,
+    default_renew_days: parseInt(document.getElementById('st_renew_days').value,10)||7,
     tagline: document.getElementById('st_tagline').value || null,
   };
   if(logo_url) payload.logo_url = logo_url;
@@ -1013,57 +1084,9 @@ document.addEventListener('DOMContentLoaded', function(){
     mo.observe(tab, {attributes:true, attributeFilter:['class','style']});
   }
 });
+
+</script>
 </script>
 
-
-<script>
-// Initialize defaults for loan form (Hijri Shamsi dates)
-async function initLoanForm(){
-  try{
-    const borrowedEl = document.getElementById('loan_borrowed');
-    const dueEl = document.getElementById('loan_due');
-    if(!(borrowedEl && dueEl && window.persianDate)) return;
-    // Fetch settings
-    const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
-    const days = st?.default_loan_days || 14;
-    // Today in Persian calendar
-    const today = new persianDate().format('YYYY/MM/DD');
-    // Due = today + days
-    const due = new persianDate().add('days', days).format('YYYY/MM/DD');
-    if(!borrowedEl.value){ borrowedEl.value = today; }
-    if(!dueEl.value){ dueEl.value = due; }
-  }catch(e){ console.error('initLoanForm', e); }
-}
-</script>
-
-
-<script>
-async function renewLoan(id){
-  try{
-    // Load loan and settings
-    const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
-    if(error || !l){ toast('یافت نشد'); return; }
-    const { data: st } = await supabase.from('settings').select('default_renew_days').eq('id',1).maybeSingle();
-    const addDays = st?.default_renew_days || 7;
-    const currentDue = new Date(l.due_at);
-    const def = new persianDate(new Date(currentDue.getTime() + addDays*24*3600*1000)).format('YYYY/MM/DD');
-    const ans = prompt('تاریخ جدید سررسید (YYYY/MM/DD - شمسی)', def);
-    if(!ans) return;
-    let newDueISO = l.due_at;
-    try{
-      const parts = ans.replaceAll('-', '/').split('/').map(Number);
-      const pd = new persianDate([parts[0], parts[1], parts[2]]).toGregorian();
-      const g = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0);
-      newDueISO = g.toISOString();
-    }catch(e){}
-    const newCount = (l.renewals_count ?? 0) + 1;
-    const { error: e2 } = await supabase.from('loans').update({ due_at: newDueISO, renewals_count: newCount }).eq('id', id);
-    if(e2){ toast(e2.message); return; }
-    toast('تمدید شد'); loadLoans();
-  }catch(e){ console.error(e); toast('خطا در تمدید'); }
-}
-</script>
-
-<script>document.addEventListener('DOMContentLoaded',()=>{try{lucide?.createIcons?.();}catch(e){}});</script>
 </body>
 </html>
