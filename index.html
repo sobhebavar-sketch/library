@@ -20,6 +20,31 @@
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/flatpickr.min.css">
 
+
+<style>
+  /* Loans rewrite v2 */
+  .loan-section{margin-top:1rem}
+  .loan-list{display:flex;flex-direction:column;gap:.5rem}
+  .loan-card{display:flex;align-items:center;justify-content:space-between;gap:.75rem;border:1px solid #334155;border-radius:.75rem;padding:.6rem .8rem;background:#0b1220}
+  .loan-card .meta{display:flex;flex-direction:column;font-size:.9rem}
+  .loan-card .actions{display:flex;gap:.35rem}
+  .btn{border:1px solid #475569;border-radius:.5rem;padding:.3rem .7rem;cursor:pointer;background:#111827}
+  .btn:hover{background:#1f2937}
+  .btn.warn{border-color:#f59e0b;background:#3b2f14}
+  .btn.danger{border-color:#ef4444;background:#3b171a}
+  .overdue-wrap{border:1px dashed #f59e0b;background:#231b0b;padding:.8rem;border-radius:.75rem;margin:1rem 0}
+  .overdue-title{color:#f59e0b;font-weight:700;margin-bottom:.3rem}
+
+  /* Modal */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:100000}
+  .modal{background:#0f172a;border:1px solid #334155;border-radius:.9rem;min-width:320px;max-width:520px;width:92%;padding:1rem}
+  .modal h4{margin:0 0 .75rem 0}
+  .modal .row{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin:.5rem 0}
+  .modal label{font-size:.85rem;opacity:.9}
+  .modal input[type="text"]{width:100%;border:1px solid #334155;background:#0b1220;color:#e5e7eb;border-radius:.5rem;padding:.4rem .5rem}
+  .modal .actions{display:flex;gap:.4rem;justify-content:flex-end;margin-top:.75rem}
+</style>
+
 </head>
 <body class="text-slate-100">
   <div id="app" class="max-w-7xl mx-auto p-4 sm:p-6">
@@ -50,13 +75,7 @@
       </div>
       <div id="catalogList" class="grid lg:grid-cols-2 gap-3"></div>
     
-<!-- ==== Loans UI rewrite containers ==== -->
-<div id="loanLists" class="loan-section">
-  <div id="overdue-wrap" class="overdue-wrap" style="display:none">
-    <div class="overdue-title">امانت‌های معوق (گذشته از سررسید)</div>
-    <div id="loanListOverdue" class="loan-list"></div>
-  </div>
-  <div class="loan-section">
+<div class="loan-section">
     <div class="loan-header"><div>امانت‌های فعال</div></div>
     <div id="loanListActive" class="loan-list"></div>
   </div>
@@ -1141,6 +1160,213 @@ document.addEventListener('DOMContentLoaded', function(){
         loans.push(loan);
         render();
       });
+    }
+  });
+})();
+</script>
+
+
+<script>
+(function(){
+  // Config via localStorage
+  function getInt(key, def){ try{ var v=parseInt(localStorage.getItem(key)||''); return isNaN(v)?def:v; }catch(e){ return def; } }
+  var DEFAULT_DUE_DAYS = getInt('cfg_due_days', 14);
+  var DEFAULT_RENEW_DAYS = getInt('cfg_renew_days', 7);
+
+  // Utilities
+  function fmt(d){ const y=d.getFullYear(); const m=('0'+(d.getMonth()+1)).slice(-2); const da=('0'+d.getDate()).slice(-2); return y+'/'+m+'/'+da; }
+  function addDays(date, days){ var d=new Date(date.getTime()); d.setDate(d.getDate()+days); return d; }
+  function today(){ return new Date(); }
+
+  // Ensure containers exist only inside loans tab
+  function ensureContainers(){
+    var tab = document.getElementById('tab-admin-loans');
+    if(!tab) return null;
+    var mount = tab.querySelector('#loanLists');
+    if(!mount){
+      mount = document.createElement('div');
+      mount.id = 'loanLists';
+      mount.className = 'loan-section';
+      mount.innerHTML = ''
+        + '<div id="overdue-wrap" class="overdue-wrap" style="display:none">'
+        +   '<div class="overdue-title">امانت‌های معوق (گذشته از سررسید)</div>'
+        +   '<div id="loanListOverdue" class="loan-list"></div>'
+        + '</div>'
+        + '<div class="loan-section">'
+        +   '<div id="loanListActive" class="loan-list"></div>'
+        + '</div>';
+      tab.appendChild(mount);
+    }
+    return mount;
+  }
+
+  // Modals
+  function buildModals(){
+    if(document.getElementById('loanModals')) return;
+    var wrap = document.createElement('div'); wrap.id='loanModals'; wrap.innerHTML = `
+      <div id="modal-backdrop" class="modal-backdrop">
+        <div class="modal" role="dialog" aria-modal="true">
+          <h4 id="modal-title"></h4>
+          <div id="modal-body"></div>
+          <div class="actions">
+            <button id="modal-cancel" class="btn">انصراف</button>
+            <button id="modal-save" class="btn warn">ثبت</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(wrap);
+  }
+
+  function openModal(title, bodyHTML, onPrefill, onSave){
+    var bd = document.getElementById('modal-backdrop'); var t = document.getElementById('modal-title');
+    var b = document.getElementById('modal-body'); var s = document.getElementById('modal-save'); var c = document.getElementById('modal-cancel');
+    t.textContent = title; b.innerHTML = bodyHTML; bd.style.display='flex';
+    function close(){ bd.style.display='none'; s.onclick=null; c.onclick=null; }
+    c.onclick = close;
+    if(onPrefill) onPrefill();
+    s.onclick = async function(){ try{ await onSave(close); } catch(e){ console.error(e); } };
+  }
+
+  // Flatpickr helper
+  function makePicker(sel){
+    var el = (typeof sel==='string')? document.querySelector(sel) : sel;
+    if(!window.flatpickr || !el) return null;
+    return flatpickr(el, {
+      disableMobile:false,
+      dateFormat:"Y/m/d",
+      locale:(flatpickr.l10ns && flatpickr.l10ns.fa)?flatpickr.l10ns.fa:undefined
+    });
+  }
+
+  // State + rendering
+  var loans = [];
+  var listActive, listOverdue, overdueWrap;
+
+  function isOverdue(ln){
+    var now = new Date(); var todayNoTime = new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    return ln.dueAt < todayNoTime;
+  }
+
+  function render(){
+    var mount = ensureContainers(); if(!mount) return;
+    listActive = document.getElementById('loanListActive');
+    listOverdue = document.getElementById('loanListOverdue');
+    overdueWrap = document.getElementById('overdue-wrap');
+    [listActive,listOverdue].forEach(function(n){ if(n) n.innerHTML=''; });
+
+    loans.sort(function(a,b){ return b.borrowedAt - a.borrowedAt; });
+
+    var anyOver=false;
+    loans.forEach(function(ln){
+      var card = document.createElement('div'); card.className='loan-card'; card.dataset.id=ln.id;
+      var meta = document.createElement('div'); meta.className='meta';
+      meta.innerHTML = '<strong>'+ln.memberName+'</strong><span>ثبت: '+ln.borrowedStr+' • سررسید: '+ln.dueStr+'</span>';
+      var actions = document.createElement('div'); actions.className='actions';
+
+      var btnBack = document.createElement('button'); btnBack.className='btn danger'; btnBack.textContent='بازگشت';
+      var btnEdit = document.createElement('button'); btnEdit.className='btn'; btnEdit.textContent='ویرایش';
+      var btnRenew = document.createElement('button'); btnRenew.className='btn warn'; btnRenew.textContent='تمدید';
+
+      btnBack.onclick = function(){
+        document.dispatchEvent(new CustomEvent('loan:return',{detail:ln}));
+        loans = loans.filter(function(x){ return x.id!==ln.id; });
+        render();
+      };
+
+      btnEdit.onclick = function(){
+        buildModals();
+        var body = `
+          <div class="row">
+            <div>
+              <label>نام امانت‌گیرنده</label>
+              <input type="text" id="m_name" value="${ln.memberName}"/>
+            </div>
+            <div>
+              <label>تاریخ ثبت</label>
+              <input type="text" id="m_borrowed" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>تاریخ سررسید</label>
+              <input type="text" id="m_due" />
+            </div>
+            <div></div>
+          </div>
+        `;
+        openModal('ویرایش امانت', body, function prefill(){
+          var fpB = makePicker('#m_borrowed'); var fpD = makePicker('#m_due');
+          if(fpB) fpB.setDate(ln.borrowedStr, true);
+          if(fpD) fpD.setDate(ln.dueStr, true);
+        }, function save(close){
+          var name = document.getElementById('m_name').value.trim();
+          var bStr = document.getElementById('m_borrowed').value;
+          var dStr = document.getElementById('m_due').value;
+          function parse(s){ var p=s.split('/'); return new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2])); }
+          ln.memberName = name || ln.memberName;
+          ln.borrowedStr = bStr; ln.dueStr = dStr;
+          ln.borrowedAt = parse(bStr); ln.dueAt = parse(dStr);
+          document.dispatchEvent(new CustomEvent('loan:edit',{detail:ln}));
+          close(); render();
+        });
+      };
+
+      btnRenew.onclick = function(){
+        buildModals();
+        var suggested = addDays(ln.dueAt, DEFAULT_RENEW_DAYS);
+        var body = `
+          <div class="row">
+            <div>
+              <label>تمدید تا تاریخ</label>
+              <input type="text" id="r_due"/>
+            </div>
+          </div>
+        `;
+        openModal('تمدید امانت', body, function prefill(){
+          var fp = makePicker('#r_due'); if(fp) fp.setDate(fmt(suggested), true);
+        }, function save(close){
+          var val = document.getElementById('r_due').value;
+          var p = val.split('/'); var d = new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2]));
+          ln.dueAt = d; ln.dueStr = val;
+          document.dispatchEvent(new CustomEvent('loan:renew',{detail:ln}));
+          close(); render();
+        });
+      };
+
+      actions.appendChild(btnBack); actions.appendChild(btnEdit); actions.appendChild(btnRenew);
+      card.appendChild(meta); card.appendChild(actions);
+
+      if(isOverdue(ln)){ anyOver=true; listOverdue.appendChild(card); } else { listActive.appendChild(card); }
+    });
+    overdueWrap.style.display = anyOver ? '' : 'none';
+  }
+
+  // Hook into the loan form submit
+  function hookForm(){
+    var form = document.getElementById('loanForm') || document.querySelector('form#loanForm'); if(!form) return;
+    var bEl = document.querySelector('#loan_borrowed'); var dEl = document.querySelector('#loan_due');
+    if (bEl && !bEl.value){ if(bEl._fp) bEl._fp.setDate(fmt(today()), true); else bEl.value = fmt(today()); }
+    if (dEl && !dEl.value){ var next = addDays(today(), DEFAULT_DUE_DAYS); if(dEl._fp) dEl._fp.setDate(fmt(next), true); else dEl.value = fmt(next); }
+
+    form.addEventListener('submit', function(e){
+      var nameEl = document.querySelector('#loan_member') || form.querySelector('input[name="member_name"]') || form.querySelector('input[placeholder*="نام"]');
+      var memberName = nameEl ? (nameEl.value || '---') : '---';
+      var bStr = bEl && bEl.value ? bEl.value : fmt(today());
+      var dStr = dEl && dEl.value ? dEl.value : fmt(addDays(today(), DEFAULT_DUE_DAYS));
+      function parse(s){ var p=s.split('/'); return new Date(parseInt(p[0]), parseInt(p[1])-1, parseInt(p[2])); }
+      var loan = { id: Date.now().toString(36), memberName, borrowedStr:bStr, dueStr:dStr, borrowedAt:parse(bStr), dueAt:parse(dStr) };
+      document.dispatchEvent(new CustomEvent('loan:create',{detail:loan}));
+      loans.push(loan); render();
+    }, false);
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    ensureContainers(); hookForm(); render();
+    var tab = document.getElementById('tab-admin-loans');
+    if(tab){
+      new MutationObserver(function(){ ensureContainers(); render(); })
+        .observe(tab, {attributes:true, attributeFilter:['class','style']});
     }
   });
 })();
