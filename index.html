@@ -577,52 +577,12 @@ function initPersianPicker(selector){
   }
 }
 
-// Init Persian pickers on page (both borrowed & due) + button handlers
+// Init loan due picker on page
 document.addEventListener('DOMContentLoaded', ()=>{
-  function bindPickers(){
-    try{
-      if (typeof $ === 'function' && $.fn && $.fn.persianDatepicker){
-        ['#loan_borrowed', '#loan_due'].forEach(sel=>{
-          const $el = $(sel);
-          if($el.length && !$el.data('pdbound')){
-            $el.persianDatepicker({ format:'YYYY/MM/DD', initialValue:false, autoClose:true });
-            $el.data('pdbound', 1);
-          }
-        });
-        const map = [
-          ['btn_open_borrowed', '#loan_borrowed'],
-          ['btn_open_due', '#loan_due']
-        ];
-        map.forEach(([btnId, inputSel])=>{
-          const btn = document.getElementById(btnId);
-          const input = document.querySelector(inputSel);
-          if(btn && input && !btn.dataset.bound){
-            btn.addEventListener('click', ()=>{
-              // Try official show method if available; otherwise focus/click to open
-              try { $(inputSel).persianDatepicker('show'); } catch(e){}
-              input.focus(); input.click();
-              const ev = new MouseEvent('mousedown', {bubbles:true, cancelable:true, view:window});
-              input.dispatchEvent(ev);
-            });
-            btn.dataset.bound = '1';
-          }
-        });
-      }
-    }catch(e){ console.error('picker bind error', e); }
-  }
-  bindPickers();
-
-  // Rebind when loans tab becomes visible
-  const loansTab = document.getElementById('tab-admin-loans');
-  if(loansTab){
-    const mo = new MutationObserver(()=> bindPickers());
-    mo.observe(loansTab, { attributes:true, attributeFilter:['class'] });
-  }
+  initPersianPicker('#loan_due');
 });
 
-
 // === Book edit via modal ===
-
 let CURRENT_BOOK = null;
 async function editBook(b){ /* replaced by modal version */ return window.editBook(b); }
 
@@ -961,5 +921,69 @@ document.addEventListener('DOMContentLoaded', function(){
   if(!ready()){ boot(); }
 })();
 </script>
+
+<!-- ==== FIX v3: Jalali datepicker via dedicated containers (altField binding) ==== -->
+<script>
+(function(){
+  function ready(){ return window.jQuery && jQuery.fn && jQuery.fn.persianDatepicker; }
+  function ensureContainer(id){
+    var el = document.getElementById(id);
+    if(!el){
+      el = document.createElement('div');
+      el.id = id;
+      el.style.position = 'relative';
+      el.style.zIndex = 9999; // ensure on top
+      // Keep it out of flow but visible when opened by plugin
+      el.style.display = 'inline-block';
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+  function bind(){
+    try{
+      var $ = window.jQuery;
+      if(!ready()) return;
+      var map = [
+        {btn: 'btn_open_borrowed', input: '#loan_borrowed', holder: 'pd_holder_borrowed'},
+        {btn: 'btn_open_due',      input: '#loan_due',      holder: 'pd_holder_due'}
+      ];
+      map.forEach(function(x){
+        var input = document.querySelector(x.input);
+        if(!input) return;
+        var holder = ensureContainer(x.holder);
+        var $holder = $(holder);
+        if(!$holder.data('pd')){
+          $holder.persianDatepicker({
+            format: 'YYYY/MM/DD',
+            initialValue: false,
+            autoClose: true,
+            altField: x.input
+          });
+          $holder.data('pd', 1);
+        }
+        var btn = document.getElementById(x.btn);
+        if(btn && !btn.dataset.bound){
+          btn.addEventListener('click', function(e){
+            e.preventDefault();
+            try{ $holder.persianDatepicker('show'); }catch(e){}
+          });
+          btn.dataset.bound = '1';
+        }
+      });
+    }catch(e){ console.error('pd bind error v3', e); }
+  }
+  function boot(){ if(!ready()) { setTimeout(boot, 150); return; } bind(); }
+  document.addEventListener('DOMContentLoaded', boot);
+  // Rebind when loans tab toggles visibility
+  document.addEventListener('DOMContentLoaded', function(){
+    var tab = document.getElementById('tab-admin-loans');
+    if(!tab || tab.dataset.mo) return;
+    var mo = new MutationObserver(function(){ setTimeout(boot, 50); });
+    mo.observe(tab, {attributes: true, attributeFilter: ['class', 'style']});
+    tab.dataset.mo = '1';
+  });
+})();
+</script>
+
 </body>
 </html>
