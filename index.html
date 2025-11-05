@@ -553,20 +553,8 @@ async function loadLoans(){
       </div>
     </div>`).join('');
 }
-async function editLoan(id){
-  const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
-  if(error || !l) { toast('یافت نشد'); return; }
-  const b = prompt('تاریخ امانت (YYYY/MM/DD - شمسی)', new persianDate(new Date(l.borrowed_at)).format('YYYY/MM/DD'));
-  const d = prompt('تاریخ سررسید (YYYY/MM/DD - شمسی)', new persianDate(new Date(l.due_at)).format('YYYY/MM/DD'));
-  const r = parseInt(prompt('تعداد تمدیدها', l.renewals_count ?? 0) || '0', 10);
-  let borrowed_at = l.borrowed_at, due_at = l.due_at;
-  try{ const pb = new persianDate(b.split('/').map(Number)).toGregorian(); borrowed_at = new Date(pb[0], pb[1]-1, pb[2], 12, 0, 0).toISOString(); }catch(e){}
-  try{ const pd = new persianDate(d.split('/').map(Number)).toGregorian(); due_at = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0).toISOString(); }catch(e){}
-  const { error: e2 } = await supabase.from('loans').update({ borrowed_at, due_at, renewals_count: r }).eq('id', id);
-  if(e2) return toast(e2.message); toast('به‌روزرسانی شد'); loadLoans();
-}
-
 async function extendLoan(id){
+  await ensurePersianDate();
   // Get current loan
   const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
   if(error || !l){ toast('یافت نشد'); return; }
@@ -577,9 +565,10 @@ async function extendLoan(id){
   const newDue = new Date(base.getTime() + addDays*24*3600*1000);
 
   // Prompt with default Jalali date, allow change
-  let defStr;
-  try{ defStr = new persianDate(newDue).format('YYYY/MM/DD'); }catch(e){
-    defStr = `${newDue.getFullYear()}/${(newDue.getMonth()+1).toString().padStart(2,'0')}/${newDue.getDate().toString().padStart(2,'0')}`;
+  let defStr; try{ defStr = new persianDate(newDue).format('YYYY/MM/DD'); }catch(e){ defStr = ''; }
+  if(!defStr){
+    const pad=n=>String(n).padStart(2,'0');
+    defStr = `${newDue.getFullYear()}/${pad(newDue.getMonth()+1)}/${pad(newDue.getDate())}`;
   }
   const ans = prompt('تاریخ جدید سررسید (YYYY/MM/DD - شمسی)', defStr);
   if(ans===null) return;
@@ -1086,6 +1075,20 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 
 </script>
+</script>
+
+
+<script>
+// Ensure persian-date is available before using it
+async function ensurePersianDate(){
+  if (typeof window.persianDate === 'function') return true;
+  await new Promise((resolve)=>{
+    const s = document.createElement('script');
+    s.src = "https://cdn.jsdelivr.net/npm/persian-date@1.2.0/dist/persian-date.js";
+    s.onload = resolve; document.head.appendChild(s);
+  });
+  return typeof window.persianDate === 'function';
+}
 </script>
 
 </body>
