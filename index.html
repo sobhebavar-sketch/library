@@ -99,30 +99,47 @@
         <div id="membersList" class="space-y-3"></div>
       </div>
 
+      
       <div id="tab-admin-loans" class="glass rounded-3xl p-5 hidden">
         <h3 class="font-bold mb-4">ثبت امانت</h3>
         <form id="loanForm" class="grid md:grid-cols-4 gap-4 mb-6">
           <div class="md:col-span-2">
             <label>عضو</label>
-            <input id="loan_member_query" class="rounded-xl px-3 py-2 w-full" placeholder="نام/نام‌خانوادگی/شماره دانشجویی" />
+            <input id="loan_member_query" class="rounded-xl px-3 py-2 w-full" placeholder="نام/نام‌خانوادگی/شماره دانشجویی" autocomplete="off" />
             <div id="loan_member_results" class="mt-2 text-sm"></div>
           </div>
           <div class="md:col-span-2">
             <label>کتاب</label>
-            <input id="loan_book_query" class="rounded-xl px-3 py-2 w-full" placeholder="عنوان/نویسنده/ISBN" />
+            <input id="loan_book_query" class="rounded-xl px-3 py-2 w-full" placeholder="عنوان/نویسنده/ISBN" autocomplete="off" />
             <div id="loan_book_results" class="mt-2 text-sm"></div>
+          </div>
+
+          <div>
+            <label>تاریخ امانت (هجری شمسی)</label>
+            <div class="date-input-wrap">
+              <input id="loan_borrowed" type="text" class="rounded-xl px-3 py-2 w-full" readonly />
+              <button type="button" id="btn_open_borrowed" class="date-btn" style="width:32px;height:32px;display:inline-flex" aria-label="باز کردن تقویم"><i data-lucide="calendar" class="w-4 h-4"></i></button>
+            </div>
           </div>
           <div>
             <label>تاریخ سررسید (هجری شمسی)</label>
-            <input id="loan_due" type="text" class="rounded-xl px-3 py-2 w-full" />
+            <div class="date-input-wrap">
+              <input id="loan_due" type="text" class="rounded-xl px-3 py-2 w-full" readonly />
+              <button type="button" id="btn_open_due" class="date-btn" style="width:32px;height:32px;display:inline-flex" aria-label="باز کردن تقویم"><i data-lucide="calendar" class="w-4 h-4"></i></button>
+            </div>
           </div>
+
           <div class="md:col-span-4"><button class="px-4 py-2 rounded-xl bg-emerald-600">ثبت امانت</button></div>
         </form>
+
+        <h3 class="font-bold mb-3">امانت‌های معوق (گذشته از سررسید)</h3>
+        <div id="loanListOverdue" class="space-y-3 mb-6"></div>
+
         <h3 class="font-bold mb-2">امانت‌های فعال</h3>
         <div id="loanList" class="space-y-3"></div>
       </div>
-
-      <div id="tab-admin-import" class="glass rounded-3xl p-5 hidden">
+      <div id="tab-admin-import"
+     class="glass rounded-3xl p-5 hidden">
         <h3 class="font-bold mb-4">ایمپورت اکسل/CSV</h3>
         <div class="grid md:grid-cols-2 gap-6">
           <div>
@@ -245,6 +262,7 @@ function selectTab(name){
 }
 
 $('#btnSearch').onclick = ()=> loadCatalog($('#search').value.trim());
+
 async function loadCatalog(q=''){
   let query = supabase.from('books').select('id,title,author,translator,subject,keywords,publisher,isbn,published_year,pages,total_copies,available_copies,cover_url').order('title');
   if(q){
@@ -252,10 +270,14 @@ async function loadCatalog(q=''){
   }
   const { data, error } = await query;
   if(error) return toast(error.message);
-  $('#catalogCount').textContent = (data||[]).length + ' کتاب';
-  $('#catalogList').innerHTML = (data||[]).map(b=>{
-    const available = b.available_copies > 0;
-    const kw = Array.isArray(b.keywords) ? b.keywords.filter(Boolean) : ((b.keywords||'').toString().split(';').map(s=>s.trim()).filter(Boolean));
+  const list = document.querySelector('#catalogList');
+  const count = document.querySelector('#catalogCount');
+  if(count) count.textContent = (data||[]).length + ' کتاب';
+  list.innerHTML = (data||[]).map(b=>{
+    const available = (b.available_copies ?? 0) > 0;
+    const kw = Array.isArray(b.keywords) ? b.keywords.filter(Boolean) :
+               (typeof b.keywords === 'string' ? b.keywords.split(';').map(s=>s.trim()).filter(Boolean) : []);
+    const mid = `more-${b.id}`;
     return `
       <div class="glass rounded-2xl p-4">
         <div class="flex items-start gap-4">
@@ -263,10 +285,20 @@ async function loadCatalog(q=''){
           <div class="flex-1">
             <div class="flex items-start justify-between gap-3">
               <div>
-                <div class="font-bold">${b.title}</div>
+                <div class="font-bold">${b.title||'—'}</div>
                 <div class="text-sm text-slate-300/80">نویسنده: ${b.author||'—'} ${b.translator? `• مترجم: ${b.translator}`:''}</div>
-                <div class="text-xs text-slate-400 mt-1">انتشارات: ${b.publisher||'—'} ${b.published_year? '• سال انتشار: '+b.published_year:''} ${b.pages? '• تعداد صفحات: '+b.pages:''} ${b.isbn? '• ISBN: '+b.isbn:''}</div>
-                ${kw.length? `<div class="mt-2 flex flex-wrap gap-1 text-[11px]">${kw.map(k=>`<span class='chip px-2 py-0.5 rounded-lg'>${k}</span>`).join('')}</div>`:''}
+                <div class="text-xs text-slate-400 mt-1">${b.publisher? `انتشارات: ${b.publisher}`:''}</div>
+                <button class="mt-2 text-xs px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20"
+                        onclick="const el=document.getElementById('${mid}'); el.classList.toggle('hidden'); this.textContent = el.classList.contains('hidden') ? 'نمایش بیشتر' : 'نمایش کمتر';">
+                  نمایش بیشتر
+                </button>
+                <div id="${mid}" class="hidden text-xs text-slate-400 mt-2 leading-6">
+                  ${b.subject? `موضوع: ${b.subject}<br/>`:''}
+                  ${b.published_year? `سال انتشار: ${b.published_year}<br/>`:''}
+                  ${b.pages? `تعداد صفحات: ${b.pages}<br/>`:''}
+                  ${b.isbn? `ISBN: ${b.isbn}<br/>`:''}
+                  ${kw.length? `<div class="mt-1 flex flex-wrap gap-1">${kw.map(k=>`<span class='chip px-2 py-0.5 rounded-lg'>${k}</span>`).join('')}</div>`:''}
+                </div>
               </div>
               <div class="text-sm flex flex-col items-end gap-2">
                 <span class="chip px-2 py-1 rounded-lg ${available? 'text-emerald-300' : 'text-rose-300'}">${available? 'موجود' : 'امانت'}</span>
@@ -274,9 +306,10 @@ async function loadCatalog(q=''){
             </div>
           </div>
         </div>
-      </div>`
+      </div>`;
   }).join('');
 }
+
 
 const coverInput = $('#bk_cover');
 coverInput?.addEventListener('change', (e)=>{
@@ -718,345 +751,175 @@ document.getElementById('formLoanModal')?.addEventListener('submit', async (e)=>
 
 
 <script>
-/* ===================== JALALI DATE UTIL & PICKER (no deps) ===================== */
+// ---------- Robust Persian datepicker binding ----------
 (function(){
-  // --- Convertors (Gregorian <-> Jalali) ---
-  function div(a,b){return Math.floor(a/b);}
-  function gregorian_to_jalali(gy, gm, gd){
-    var g_d_m=[0,31,59,90,120,151,181,212,243,273,304,334];
-    var jy=(gy<=1600)?0:979; gy-=(gy<=1600)?621:1600;
-    var gy2=(gm>2)?(gy+1):gy;
-    var days=365*gy+div(gy2+3,4)-div(gy2+99,100)+div(gy2+399,400)-80+gd+g_d_m[gm-1];
-    jy+=33*div(days,12053); days%=12053;
-    jy+=4*div(days,1461); days%=1461;
-    if(days>365){jy+=div(days-1,365); days=(days-1)%365;}
-    var jm=(days<186)?1+div(days,31):7+div(days-186,30);
-    var jd=1+((days<186)?(days%31):((days-186)%30));
-    return [jy+1,jm,jd];
+  function ready(){ return window.jQuery && jQuery.fn && jQuery.fn.persianDatepicker; }
+  function bindOnce(selector){
+    if(!ready()) return false;
+    try{
+      jQuery(selector).each(function(){
+        if(this.dataset.pdBound==='1') return;
+        jQuery(this).persianDatepicker({ format:'YYYY/MM/DD', initialValue:false, autoClose:true });
+        this.dataset.pdBound='1';
+      });
+      return true;
+    }catch(e){ console.error('persian bind', e); }
+    return false;
   }
-  function jalali_to_gregorian(jy,jm,jd){
-    jy-=979; var days=365*jy+div(jy,33)*8+div((jy%33)+3,4)+jd-1;
-    for(var i=1;i<jm;i++) days+=(i<7)?31:30;
-    var gy=1600+400*div(days,146097); days%=146097;
-    var leap=true;
-    if(days>=36525){days--; gy+=100*div(days,36524); days%=36524; if(days>=365) days++; else leap=false;}
-    gy+=4*div(days,1461); days%=1461;
-    if(days>=366){leap=false; days--; gy+=div(days,365); days%=365;}
-    var gd=days+1; var sal_a=[0,31,(leap?29:28),31,30,31,30,31,31,30,31,30,31];
-    var gm=0; for(gm=1; gm<=12 && gd>sal_a[gm]; gm++) gd-=sal_a[gm];
-    return [gy,gm,gd];
+  function retryBind(selector, tries=20, delay=150){
+    let n=0; (function tick(){ if(bindOnce(selector) || n++>=tries) return; setTimeout(tick, delay); })();
   }
-  function pad(n){return (n<10?'0':'')+n;}
-  function toJalaliString(d){
-    var j=gregorian_to_jalali(d.getFullYear(), d.getMonth()+1, d.getDate());
-    return j[0]+"/"+pad(j[1])+"/"+pad(j[2]);
-  }
-  function fromJalaliString(s){
-    var a=s.split('/').map(Number);
-    if(a.length<3) return null;
-    var g=jalali_to_gregorian(a[0],a[1],a[2]);
-    return new Date(g[0], g[1]-1, g[2], 12, 0, 0);
-  }
-
-  // --- Lightweight picker UI ---
-  function buildCalendar(input, valueDate){
-    var wrapper=document.createElement('div');
-    wrapper.className='absolute z-50 bg-slate-800 text-slate-100 rounded-xl shadow-xl p-3 border border-white/10';
-    wrapper.style.minWidth='260px';
-    wrapper.style.direction='rtl';
-    wrapper.style.fontSize='12px';
-
-    var picked=valueDate||new Date();
-    var j=gregorian_to_jalali(picked.getFullYear(), picked.getMonth()+1, picked.getDate());
-    var jy=j[0], jm=j[1];
-
-    function render(){
-      wrapper.innerHTML='';
-      var header=document.createElement('div');
-      header.className='flex items-center justify-between mb-2';
-      var prev=document.createElement('button'); prev.textContent='‹'; prev.className='px-2 py-1 bg-white/10 rounded';
-      var title=document.createElement('div'); title.className='font-bold';
-      var next=document.createElement('button'); next.textContent='›'; next.className='px-2 py-1 bg-white/10 rounded';
-      title.textContent=''+jy+' / '+pad(jm);
-      prev.onclick=function(){ jm--; if(jm<1){ jm=12; jy--; } drawDays(); };
-      next.onclick=function(){ jm++; if(jm>12){ jm=1; jy++; } drawDays(); };
-      header.append(prev,title,next);
-      wrapper.appendChild(header);
-      var grid=document.createElement('div'); grid.className='grid grid-cols-7 gap-1';
-      var wnames=['ش','ی','د','س','چ','پ','ج'];
-      wnames.forEach(function(w){ var c=document.createElement('div'); c.textContent=w; c.className='text-center text-slate-300'; grid.appendChild(c); });
-      function daysInJalaliMonth(y,m){ return (m<=6)?31: (m<=11?30: (( ( ( ( (y%33)===1)||(y%33)===5||(y%33)===9||(y%33)===13||(y%33)===17||(y%33)===22||(y%33)===26||(y%33)===30 ) ) )?30:29)); }
-      function dayOfWeekJalali(y,m,day){
-        var g=jalali_to_gregorian(y,m,1);
-        var d=new Date(g[0], g[1]-1, 1).getDay(); // 0=Sun
-        // convert to Sat-first index
-        return (d+1)%7;
-      }
-      function drawDays(){
-        render();
-      }
-      // compute first week offset & number of days
-      var offset=dayOfWeekJalali(jy,jm,1);
-      for(var i=0;i<offset;i++){ var e=document.createElement('div'); e.innerHTML='&nbsp;'; grid.appendChild(e); }
-      var dim=daysInJalaliMonth(jy,jm);
-      for(var d=1; d<=dim; d++){
-        var btn=document.createElement('button');
-        btn.className='px-2 py-1 rounded hover:bg-white/10 text-center';
-        btn.textContent=pad(d);
-        btn.onclick=function(ev){
-          var day=parseInt(this.textContent,10);
-          var g=jalali_to_gregorian(jy,jm,day);
-          var dt=new Date(g[0], g[1]-1, g[2], 12,0,0);
-          input.value = toJalaliString(dt);
-          input.dataset.iso = dt.toISOString();
-          wrapper.remove();
-          input.dispatchEvent(new Event('change'));
-        };
-        grid.appendChild(btn);
-      }
-      wrapper.appendChild(grid);
-    }
-    render();
-    return wrapper;
-  }
-
-  function attachPicker(input){
-    if(input.dataset.jalaliBound==='1') return;
-    input.dataset.jalaliBound='1';
-    input.readOnly=true;
-    input.addEventListener('focus', function(){
-      var rect=input.getBoundingClientRect();
-      var existing=document.getElementById('jalali-picker-popup');
-      if(existing) existing.remove();
-      var cal=buildCalendar(input, input.dataset.iso? new Date(input.dataset.iso) : new Date());
-      cal.id='jalali-picker-popup';
-      cal.style.position='fixed';
-      cal.style.top=(rect.bottom+6)+'px';
-      cal.style.left=(rect.left)+'px';
-      document.body.appendChild(cal);
+  document.addEventListener('DOMContentLoaded', function(){
+    retryBind('#loan_due');
+    const el = document.getElementById('loan_due');
+    if(el) el.addEventListener('focus', ()=>bindOnce('#loan_due'));
+    document.querySelectorAll('[data-tab="admin-loans"]').forEach(btn=>{
+      btn.addEventListener('click', ()=> setTimeout(()=>retryBind('#loan_due'), 50));
     });
-  }
-
-  // Expose helpers globally
-  window.JalaliUtil = { toJalaliString, fromJalaliString, gregorian_to_jalali, jalali_to_gregorian };
-  window.attachJalaliPicker = attachPicker;
-})();
-/* ===================== END: JALALI PICKER ===================== */
-
-// ===================== LOANS UI REWRITE =====================
-(async function(){
-  function $(s){return document.querySelector(s);}
-  function $all(s){return Array.from(document.querySelectorAll(s));}
-  const supa = window.supabase;
-
-  // Replace Loans tab content entirely with our layout
-  document.addEventListener('DOMContentLoaded', async function(){
-    const host = document.getElementById('tab-admin-loans');
-    if(!host) return;
-    host.innerHTML = `
-      <div class="glass rounded-2xl p-5">
-        <div class="text-lg font-bold mb-4">ثبت امانت</div>
-        <div class="grid md:grid-cols-2 gap-4">
-          <div>
-            <label class="text-sm text-slate-300">کتاب</label>
-            <input id="loan_book" class="rounded-xl px-3 py-2 w-full" placeholder="عنوان/نویسنده/ISBN"/>
-          </div>
-          <div>
-            <label class="text-sm text-slate-300">عضو</label>
-            <input id="loan_member" class="rounded-xl px-3 py-2 w-full" placeholder="نام/نام‌خانوادگی/شماره دانشجویی"/>
-          </div>
-          <div>
-            <label class="text-sm text-slate-300">تاریخ ثبت امانت (جلالی)</label>
-            <input id="loan_borrowed_j" class="rounded-xl px-3 py-2 w-full" placeholder="YYYY/MM/DD"/>
-          </div>
-          <div>
-            <label class="text-sm text-slate-300">تاریخ سررسید (جلالی)</label>
-            <input id="loan_due_j" class="rounded-xl px-3 py-2 w-full" placeholder="YYYY/MM/DD"/>
-          </div>
-        </div>
-        <div class="mt-4">
-          <button id="btn_issue_loan" class="px-4 py-2 rounded-xl bg-emerald-600 text-white">ثبت امانت</button>
-        </div>
-      </div>
-
-      <div class="mt-8">
-        <div id="overdueBox" class="hidden">
-          <div class="text-amber-300 font-bold mb-2">امانت‌های معوق (مهلت گذشته)</div>
-          <div id="loanListOverdue" class="space-y-2"></div>
-          <hr class="my-4 border-white/10"/>
-        </div>
-        <div class="flex items-center justify-between mb-2">
-          <div class="text-lg font-bold">امانت‌های فعال</div>
-          <button id="refreshLoans" class="px-3 py-1 rounded bg-white/10">بازآوری</button>
-        </div>
-        <div id="loanList" class="space-y-2"></div>
-      </div>
-    `;
-
-    // init defaults for dates
-    const today = new Date();
-    $('#loan_borrowed_j').value = JalaliUtil.toJalaliString(today);
-    const { data: setRow } = await supa.from('settings').select('default_loan_days').limit(1).maybeSingle();
-    const addDays = (setRow && setRow.default_loan_days) ? setRow.default_loan_days : 14;
-    const due = new Date(today.getTime()+ addDays*24*3600*1000);
-    $('#loan_due_j').value = JalaliUtil.toJalaliString(due);
-
-    // attach Jalali pickers
-    attachJalaliPicker($('#loan_borrowed_j'));
-    attachJalaliPicker($('#loan_due_j'));
-
-    // wire actions
-    $('#btn_issue_loan').onclick = issueLoan;
-    $('#refreshLoans').onclick = loadLoans;
-
-    // initial load
-    loadLoans();
   });
-
-  async function findBookIdByQuery(q){
-    const { data } = await supa.from('books').select('id').or(`title.ilike.%${q}%,author.ilike.%${q}%,isbn.ilike.%${q}%`).limit(1);
-    return data && data[0] ? data[0].id : null;
-  }
-  async function findMemberIdByQuery(q){
-    const { data } = await supa.from('members').select('id').or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,student_id.ilike.%${q}%`).limit(1);
-    return data && data[0] ? data[0].id : null;
-  }
-
-  async function issueLoan(){
-    const qBook = $('#loan_book').value.trim();
-    const qMem  = $('#loan_member').value.trim();
-    if(!qBook || !qMem) return toast('کتاب و عضو را وارد کنید');
-    const book_id = await findBookIdByQuery(qBook);
-    const member_id = await findMemberIdByQuery(qMem);
-    if(!book_id || !member_id) return toast('کتاب یا عضو یافت نشد');
-
-    const borrowed_at = JalaliUtil.fromJalaliString($('#loan_borrowed_j').value);
-    const due_at = JalaliUtil.fromJalaliString($('#loan_due_j').value);
-    if(!borrowed_at || !due_at) return toast('تاریخ‌ها نامعتبر است');
-
-    const user = (await supa.auth.getUser()).data.user;
-    const { error } = await supa.from('loans').insert({
-      book_id, member_id, issued_by_admin_id: user?.id || null,
-      borrowed_at: borrowed_at.toISOString(), due_at: due_at.toISOString()
-    });
-    if(error) return toast(error.message);
-    toast('امانت ثبت شد');
-    loadLoans();
-  }
-
-  window.returnLoan = async function(id){
-    const { error } = await supa.rpc('return_loan', { p_loan_id: id });
-    if(error) return toast(error.message);
-    toast('بازگشت ثبت شد'); loadLoans();
+  const mo = new MutationObserver(()=>{
+    bindOnce('input[id^="ml_borrowed"]');
+    bindOnce('input[id^="ml_due"]');
+  });
+  document.addEventListener('DOMContentLoaded', ()=> mo.observe(document.body, {childList:true, subtree:true}));
+  const _origOpen = window.openLoanModal;
+  window.openLoanModal = function(l, opts){
+    if(typeof _origOpen === 'function'){ _origOpen(l, opts); }
+    setTimeout(()=>{
+      bindOnce('input[id^="ml_borrowed"]');
+      bindOnce('input[id^="ml_due"]');
+    }, 0);
   };
-
-  window.editLoan = async function(id){
-    const { data: l, error } = await supa.from('loans').select('*').eq('id', id).maybeSingle();
-    if(error || !l) return toast('یافت نشد');
-    openLoanEditModal(l);
-  };
-
-  window.renewLoan = async function(id){
-    const { data: l, error } = await supa.from('loans').select('*').eq('id', id).maybeSingle();
-    if(error || !l) return toast('یافت نشد');
-    const base = new Date(l.due_at||Date.now());
-    const def = new Date(base.getTime()+7*24*3600*1000); // پیش‌فرض یک هفته
-    openLoanEditModal(l, { renew:true, dueDefault: def });
-  };
-
-  function openLoanEditModal(l, opts={}){
-    const isRenew=!!opts.renew;
-    const w=document.createElement('div'); w.className='fixed inset-0 z-50 bg-black/50 flex items-center justify-center';
-    w.innerHTML=`
-      <div class="glass rounded-2xl p-5 w-[520px] max-w-[92vw]">
-        <div class="flex items-center justify-between mb-3">
-          <div class="font-bold">${isRenew?'تمدید امانت':'ویرایش امانت'}</div>
-          <button class="px-2 py-1 bg-white/10 rounded" onclick="this.closest('.fixed').remove()">✕</button>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="text-xs text-slate-300">تاریخ امانت (جلالی)</label>
-            <input id="ed_borrowed" class="rounded-xl px-3 py-2 w-full"/>
-          </div>
-          <div>
-            <label class="text-xs text-slate-300">تاریخ سررسید (جلالی)</label>
-            <input id="ed_due" class="rounded-xl px-3 py-2 w-full"/>
-          </div>
-        </div>
-        <div class="mt-3">
-          <label class="text-xs text-slate-300">عضو</label>
-          <input id="ed_member" class="rounded-xl px-3 py-2 w-full" placeholder="نام/نام‌خانوادگی/شماره دانشجویی"/>
-        </div>
-        <div class="mt-4 flex items-center justify-end gap-2">
-          ${isRenew?'<span class="text-xs text-slate-400">پیش‌فرض: یک هفته پس از سررسید فعلی</span>':''}
-          <button id="ed_save" class="px-4 py-2 rounded bg-slate-600">ثبت</button>
-        </div>
-      </div>`;
-    document.body.appendChild(w);
-    // defaults
-    const borrowed = new Date(l.borrowed_at);
-    const due = opts.dueDefault || new Date(l.due_at);
-    document.getElementById('ed_borrowed').value = JalaliUtil.toJalaliString(borrowed);
-    document.getElementById('ed_due').value = JalaliUtil.toJalaliString(due);
-    document.getElementById('ed_member').value='';
-
-    attachJalaliPicker(document.getElementById('ed_borrowed'));
-    attachJalaliPicker(document.getElementById('ed_due'));
-
-    document.getElementById('ed_save').onclick = async ()=>{
-      const pb = JalaliUtil.fromJalaliString(document.getElementById('ed_borrowed').value);
-      const pd = JalaliUtil.fromJalaliString(document.getElementById('ed_due').value);
-      if(!pb || !pd) return toast('تاریخ‌ها نامعتبر است');
-      let member_id = l.member_id;
-      const q = document.getElementById('ed_member').value.trim();
-      if(q){ member_id = await findMemberIdByQuery(q) || member_id; }
-      const patch = { borrowed_at: pb.toISOString(), due_at: pd.toISOString(), member_id };
-      if(isRenew) patch.renewals_count = (l.renewals_count||0)+1;
-      const { error } = await supa.from('loans').update(patch).eq('id', l.id);
-      if(error) return toast(error.message);
-      toast(isRenew?'تمدید شد':'به‌روزرسانی شد');
-      w.remove(); loadLoans();
-    };
-  }
-
-  async function loadLoans(){
-    const { data: loans, error } = await supa.from('loans').select('*, books(title), members(first_name,last_name)').is('returned_at', null).order('borrowed_at', {ascending:false});
-    if(error) return toast(error.message);
-    const now = new Date();
-    const overdue = (loans||[]).filter(l => l.due_at && new Date(l.due_at) < now);
-    const normal = (loans||[]).filter(l => !overdue.includes(l));
-
-    const card = (l)=>{
-      const member = (l.members? ((l.members.first_name||'')+' '+(l.members.last_name||'')) : ('عضو #'+l.member_id));
-      const title = l.books? l.books.title : ('کتاب #'+l.book_id);
-      const jb = JalaliUtil.toJalaliString(new Date(l.borrowed_at));
-      const jd = JalaliUtil.toJalaliString(new Date(l.due_at));
-      return `
-      <div class="glass rounded-2xl p-4 flex items-center justify-between">
-        <div class="text-sm">
-          <div class="font-bold">${title}</div>
-          <div class="text-slate-300">${member}</div>
-          <div class="text-xs text-slate-400">امانت: ${jb} • سررسید: ${jd} • تمدید: ${l.renewals_count||0} بار</div>
-        </div>
-        <div class="flex items-center gap-2 text-sm">
-          <button class="px-3 py-1 rounded bg-amber-600" onclick="returnLoan(${l.id})">بازگشت</button>
-          <button class="px-3 py-1 rounded bg-slate-600" onclick="editLoan(${l.id})">ویرایش</button>
-          <button class="px-3 py-1 rounded bg-emerald-700" onclick="renewLoan(${l.id})">تمدید</button>
-        </div>
-      </div>`;
-    };
-
-    const overBox = document.getElementById('loanListOverdue');
-    const overWrap = document.getElementById('overdueBox');
-    if(overdue.length){ overWrap.classList.remove('hidden'); overBox.innerHTML = overdue.map(card).join(''); }
-    else { overWrap.classList.add('hidden'); overBox.innerHTML=''; }
-
-    document.getElementById('loanList').innerHTML = normal.map(card).join('');
-  }
-
-  window.loadLoans = loadLoans;
 })();
+
+// ---------- Edit book & member implementations ----------
+window.editBook = async function(input){
+  try{
+    let b = input;
+    if(typeof input === 'number'){
+      const { data, error } = await supabase.from('books').select('*').eq('id', input).maybeSingle();
+      if(error || !data){ toast('کتاب یافت نشد'); return; }
+      b = data;
+    }
+    document.getElementById('modalBookTitle').textContent = 'ویرایش کتاب';
+    document.getElementById('mb_id').value = b.id || '';
+    document.getElementById('mb_title').value = b.title || '';
+    document.getElementById('mb_author').value = b.author || '';
+    document.getElementById('mb_translator').value = b.translator || '';
+    document.getElementById('mb_subject').value = b.subject || '';
+    document.getElementById('mb_keywords').value = Array.isArray(b.keywords) ? b.keywords.join(';') : (b.keywords || '');
+    document.getElementById('mb_publisher').value = b.publisher || '';
+    document.getElementById('mb_isbn').value = b.isbn || '';
+    document.getElementById('mb_published_year').value = b.published_year || '';
+    document.getElementById('mb_pages').value = b.pages || '';
+    document.getElementById('mb_total_copies').value = b.total_copies || 1;
+    openModal('modalBook');
+  }catch(e){ console.error(e); toast('خطا در ویرایش کتاب'); }
+};
+
+window.editMember = async function(input){
+  try{
+    let m = input;
+    if(typeof input === 'number'){
+      const { data, error } = await supabase.from('members').select('*').eq('id', input).maybeSingle();
+      if(error || !data){ toast('عضو یافت نشد'); return; }
+      m = data;
+    }
+    document.getElementById('modalMemberTitle').textContent = 'ویرایش عضو';
+    document.getElementById('mm_id').value = m.id || '';
+    document.getElementById('mm_first_name').value = m.first_name || '';
+    document.getElementById('mm_last_name').value = m.last_name || '';
+    document.getElementById('mm_entry_year').value = m.entry_year || '';
+    document.getElementById('mm_degree').value = m.degree || '';
+    document.getElementById('mm_student_id').value = m.student_id || '';
+    document.getElementById('mm_phone').value = m.phone || '';
+    document.getElementById('mm_email').value = m.email || '';
+    openModal('modalMember');
+  }catch(e){ console.error(e); toast('خطا در ویرایش عضو'); }
+};
+
+// ---------- Prevent refresh & persist forms ----------
+document.addEventListener('DOMContentLoaded', function(){
+  const fb = document.getElementById('formBookModal');
+  if(fb && !fb.dataset.bound){
+    fb.addEventListener('submit', async function(e){
+      e.preventDefault();
+      try{
+        const id = parseInt(document.getElementById('mb_id').value,10);
+        const payload = {
+          title: document.getElementById('mb_title').value.trim(),
+          author: document.getElementById('mb_author').value.trim() || null,
+          translator: document.getElementById('mb_translator').value.trim() || null,
+          subject: document.getElementById('mb_subject').value.trim() || null,
+          keywords: (document.getElementById('mb_keywords').value||'').split(';').map(s=>s.trim()).filter(Boolean),
+          publisher: document.getElementById('mb_publisher').value.trim() || null,
+          isbn: document.getElementById('mb_isbn').value.trim() || null,
+          published_year: parseInt(document.getElementById('mb_published_year').value,10) || null,
+          pages: parseInt(document.getElementById('mb_pages').value,10) || null,
+          total_copies: parseInt(document.getElementById('mb_total_copies').value,10) || 1,
+        };
+        const { error } = await supabase.from('books').update(payload).eq('id', id);
+        if(error) return toast(error.message);
+        toast('کتاب به‌روزرسانی شد'); closeModal('modalBook');
+        if(typeof loadCatalog==='function') loadCatalog();
+        if(typeof loadAdminBooks==='function') loadAdminBooks();
+      }catch(err){ console.error(err); toast('خطا در ذخیره کتاب'); }
+    });
+    fb.dataset.bound = '1';
+  }
+
+  const fm = document.getElementById('formMemberModal');
+  if(fm && !fm.dataset.bound){
+    fm.addEventListener('submit', async function(e){
+      e.preventDefault();
+      try{
+        const id = parseInt(document.getElementById('mm_id').value,10);
+        const payload = {
+          first_name: document.getElementById('mm_first_name').value.trim() || null,
+          last_name: document.getElementById('mm_last_name').value.trim() || null,
+          entry_year: parseInt(document.getElementById('mm_entry_year').value,10) || null,
+          degree: document.getElementById('mm_degree').value.trim() || null,
+          student_id: document.getElementById('mm_student_id').value.trim() || null,
+          phone: document.getElementById('mm_phone').value.trim() || null,
+          email: document.getElementById('mm_email').value.trim() || null,
+        };
+        const { error } = await supabase.from('members').update(payload).eq('id', id);
+        if(error) return toast(error.message);
+        toast('عضو به‌روزرسانی شد'); closeModal('modalMember');
+        if(typeof loadMembers==='function') loadMembers();
+      }catch(err){ console.error(err); toast('خطا در ذخیره عضو'); }
+    });
+    fm.dataset.bound = '1';
+  }
+});
 </script>
 
+
+<script>
+/* ======== Robust loader for persian-date ======== */
+(function ensurePersianDateReady(){
+  function ready(){ return typeof window.persianDate === 'function'; }
+  function loadScript(cb){
+    var s = document.createElement('script');
+    s.src = "https://cdn.jsdelivr.net/npm/persian-date@1.2.0/dist/persian-date.js";
+    s.onload = cb;
+    document.head.appendChild(s);
+  }
+  function boot(){
+    if(!ready()){ try{ loadScript(after); }catch(e){ setTimeout(boot, 500); } return; }
+    after();
+  }
+  function after(){
+    if(!ready()){ setTimeout(after, 150); return; }
+    try{
+      if(window.__pd_booted) return;
+      window.__pd_booted = true;
+      // Re-init loan form and modal pickers after persianDate is guaranteed
+      if(typeof initLoanForm === 'function'){ initLoanForm(); }
+    }catch(e){}
+  }
+  if(!ready()){ boot(); }
+})();
+</script>
 </body>
 </html>
