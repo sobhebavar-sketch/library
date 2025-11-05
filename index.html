@@ -556,6 +556,7 @@ async function loadLoans(){
 
 
 
+
 async function extendLoan(id){
   // Load loan & defaults
   const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
@@ -592,11 +593,9 @@ async function extendLoan(id){
   modal.classList.remove('hidden'); modal.classList.add('flex');
 
   const handlerOk = async ()=>{
-    const parts = (inp.value||'').replaceAll('-', '/').split('/').map(s=>parseInt(s,10));
-    if(parts.length<3 || parts.some(isNaN)){ toast('تاریخ نامعتبر'); return; }
-    const g = j2g(parts[0], parts[1], parts[2]);
-    const due_at = new Date(g[0], g[1]-1, g[2], 12, 0, 0);
-    const payload = { due_at: due_at.toISOString(), renewals_count: (l.renewals_count||0) + 1 };
+    const picked = parseInputDate(inp);
+    if(!picked){ toast('تاریخ نامعتبر'); return; }
+    const payload = { due_at: picked.toISOString(), renewals_count: (l.renewals_count||0) + 1 };
     const { error: e2 } = await supabase.from('loans').update(payload).eq('id', id);
     if(e2){ toast(e2.message); return; }
     toast('تمدید شد');
@@ -1293,6 +1292,32 @@ async function setDefaultLoanDates(){
       if (dEl._flatpickr && window.flatpickr){ dEl._flatpickr.setDate(due, true); }
     }catch(_){}
   }catch(e){}
+}
+</script>
+
+
+<script>
+function parseInputDate(el){
+  // Prefer flatpickr's selected date if available
+  try{
+    if (el && el._flatpickr && el._flatpickr.selectedDates && el._flatpickr.selectedDates.length){
+      return new Date(el._flatpickr.selectedDates[0].getFullYear(),
+                      el._flatpickr.selectedDates[0].getMonth(),
+                      el._flatpickr.selectedDates[0].getDate(), 12, 0, 0);
+    }
+  }catch(_){}
+  // Fallback: parse text
+  const txt = (el?.value||'').trim().replaceAll('-', '/');
+  if(!txt) return null;
+  const parts = txt.split('/').map(x=>parseInt(x,10));
+  if(parts.length<3 || parts.some(isNaN)) return null;
+  // Heuristic: if year looks Gregorian (>=1700), use as Gregorian
+  if(parts[0] >= 1700){
+    return new Date(parts[0], parts[1]-1, parts[2], 12, 0, 0);
+  }
+  // Otherwise treat as Jalali and convert
+  const g = j2g(parts[0], parts[1], parts[2]);
+  return new Date(g[0], g[1]-1, g[2], 12, 0, 0);
 }
 </script>
 
