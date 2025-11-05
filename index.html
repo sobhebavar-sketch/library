@@ -9,10 +9,10 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@babakhani/persian-datepicker@1.2.0/dist/css/persian-datepicker.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/persian-date@1.1.0/dist/persian-date.js">
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@babakhani/persian-date@1.1.0/dist/persian-date.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@babakhani/persian-datepicker@1.2.0/dist/js/persian-datepicker.js"></script>
+  <script src="https://unpkg.com/persian-date@1.1.0/dist/persian-date.js"></script>
+  <script src="https://unpkg.com/persian-date@1.1.0/dist/persian-date.js"></script>
   <style>
     html, body { height: 100%; background: #0b1020; }
     .glass { background: rgba(255,255,255,0.06); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.08); }
@@ -901,7 +901,7 @@ document.addEventListener('DOMContentLoaded', function(){
   function ready(){ return typeof window.persianDate === 'function'; }
   function loadScript(cb){
     var s = document.createElement('script');
-    s.src = "https://cdn.jsdelivr.net/npm/@babakhani/persian-date@1.1.0/dist/persian-date.js";
+    s.src = "https://unpkg.com/persian-date@1.1.0/dist/persian-date.js";
     s.onload = cb;
     document.head.appendChild(s);
   }
@@ -923,43 +923,35 @@ document.addEventListener('DOMContentLoaded', function(){
 </script>
 
 <script>
-// Init Persian pickers on page (both borrowed & due) + button handlers
-document.addEventListener('DOMContentLoaded', ()=>{
-  function bindPickers(){
+document.addEventListener('DOMContentLoaded', function(){
+  function bind(){
     try{
-      if (typeof $ === 'function' && $.fn && $.fn.persianDatepicker){
-        ['#loan_borrowed', '#loan_due'].forEach(sel=>{
-          const $el = $(sel);
+      if (window.jQuery && jQuery.fn && jQuery.fn.persianDatepicker){
+        ['#loan_borrowed', '#loan_due'].forEach(function(sel){
+          var $el = jQuery(sel);
           if($el.length && !$el.data('pdbound')){
-            $el.persianDatepicker({ format:'YYYY/MM/DD', initialValue:false, autoClose:true });
+            $el.persianDatepicker({ observer:true, format:'YYYY/MM/DD', initialValue:false, autoClose:true });
             $el.data('pdbound', 1);
           }
         });
-        const map = [
-          ['btn_open_borrowed', '#loan_borrowed'],
-          ['btn_open_due', '#loan_due']
-        ];
-        map.forEach(([btnId, inputSel])=>{
-          const btn = document.getElementById(btnId);
-          const input = document.querySelector(inputSel);
-          if(btn && input && !btn.dataset.bound){
-            btn.addEventListener('click', ()=>{
-              try { $(inputSel).persianDatepicker('show'); } catch(e){}
-              input.focus(); input.click();
-              const ev = new MouseEvent('mousedown', {bubbles:true, cancelable:true, view:window});
-              input.dispatchEvent(ev);
+        [['btn_open_borrowed','#loan_borrowed'],['btn_open_due','#loan_due']].forEach(function(x){
+          var btn=document.getElementById(x[0]);
+          if(btn && !btn.dataset.bound){
+            btn.addEventListener('click', function(e){
+              e.preventDefault();
+              try{ jQuery(x[1]).persianDatepicker('show'); }catch(e){}
             });
-            btn.dataset.bound = '1';
+            btn.dataset.bound='1';
           }
         });
       }
-    }catch(e){ console.error('picker bind error', e); }
+    }catch(e){ console.error('pd init error', e); }
   }
-  bindPickers();
-  const loansTab = document.getElementById('tab-admin-loans');
-  if(loansTab){
-    const mo = new MutationObserver(()=> bindPickers());
-    mo.observe(loansTab, { attributes:true, attributeFilter:['class'] });
+  bind();
+  var tab=document.getElementById('tab-admin-loans');
+  if(tab){
+    var mo=new MutationObserver(function(){ bind(); });
+    mo.observe(tab,{attributes:true, attributeFilter:['class','style']});
   }
 });
 </script>
