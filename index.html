@@ -780,20 +780,6 @@ async function editLoan(id){
   const btnSave = $('#edit_loan_save');
   const btnCancel = $('#edit_loan_cancel');
 
-  // helper to set jalali to inputs
-  const setJalali = (el, d)=>{
-    const j = g2j(d.getFullYear(), d.getMonth()+1, d.getDate());
-    el.value = fmtJ(j[0], j[1], j[2]);
-  };
-
-  // Prefill fields
-  try{
-    const b = l.borrowed_at ? new Date(l.borrowed_at) : new Date();
-    const d = l.due_at ? new Date(l.due_at) : new Date();
-    setJalali(inpBorrowed, b);
-    setJalali(inpDue, d);
-  }catch(_){}
-
   // Show current member
   res.innerHTML = '';
   if(l.members){
@@ -1094,7 +1080,9 @@ document.addEventListener('DOMContentLoaded', function(){
     if(!window.flatpickr) return;
     var base = {
       disableMobile: false,
-      dateFormat: "Y/m/d",
+      dateFormat: "Y-m-d",
+      altInput: true,
+      altFormat: "Y/m/d",
       // use Persian locale if available
       locale: (flatpickr.l10ns && flatpickr.l10ns.fa) ? flatpickr.l10ns.fa : undefined
     };
