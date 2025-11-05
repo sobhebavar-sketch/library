@@ -809,14 +809,14 @@ async function editLoan(id){
       const cfg = Object.assign({}, loanBorrowed._flatpickr.config);
       if (inpBorrowed._flatpickr) inpBorrowed._flatpickr.destroy();
       window.flatpickr(inpBorrowed, cfg);
-      inpBorrowed._flatpickr.setDate(l.borrowed_at ? new Date(l.borrowed_at) : new Date(), true);
+      inpBorrowed._flatpickr.setDate(toDateForPicker(l.borrowed_at), true);
     }
     const loanDue = document.getElementById('loan_due');
     if (loanDue && loanDue._flatpickr && window.flatpickr) {
       const cfg2 = Object.assign({}, loanDue._flatpickr.config);
       if (inpDue._flatpickr) inpDue._flatpickr.destroy();
       window.flatpickr(inpDue, cfg2);
-      inpDue._flatpickr.setDate(l.due_at ? new Date(l.due_at) : new Date(), true);
+      inpDue._flatpickr.setDate(toDateForPicker(l.due_at), true);
     }
   }catch(_){}
 
@@ -1204,6 +1204,24 @@ function parseDateStrToISO(str){
         const g = new Date(pj[0], pj[1]-1, pj[2], 12, 0, 0);
         return g.toISOString();
       }
+
+// --- Coerce db value (ISO or 'YYYY/MM/DD' Jalali string) to a Date for flatpickr
+function toDateForPicker(s){
+  try{
+    if(!s) return new Date();
+    if(typeof s === 'string' && s.includes('/')){
+      const parts = s.replaceAll('-', '/').split('/').map(x=>parseInt(x,10));
+      if(parts.length>=3 && !parts.some(isNaN)){
+        const j = j2g(parts[0], parts[1]||1, parts[2]||1);
+        return new Date(j[0], j[1]-1, j[2], 12, 0, 0);
+      }
+    }
+    // Fallback: assume ISO/parsable Gregorian
+    const d = new Date(s);
+    if(Number.isFinite(d.getTime())) return d;
+  }catch(e){}
+  return new Date();
+}
     }
   }catch(e){}
   return null;
