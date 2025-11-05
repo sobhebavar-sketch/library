@@ -200,6 +200,14 @@ const fmtDate = (s)=>{
   }
 };
 const toast = (msg)=>{ const el=document.createElement('div'); el.className='fixed bottom-4 right-4 bg-black/80 text-white px-3 py-2 rounded-xl text-sm'; el.textContent=msg; document.body.appendChild(el); setTimeout(()=>el.remove(),3000); };
+// DOM ready polyfill (prevents 'ready is not defined')
+if (typeof ready === 'undefined') {
+  var ready = function(fn){
+    if (document.readyState !== 'loading') { fn(); }
+    else { document.addEventListener('DOMContentLoaded', fn); }
+  };
+}
+
 
 function toCSV(rows){
   if(!rows || !rows.length) return '';
@@ -439,7 +447,12 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
   if(!due_at_iso){
     const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
     const days = st?.default_loan_days || 14;
-    due_at_iso = new Date(Date.now() + days*24*3600*1000).toISOString();
+    {
+      const now = new Date();
+      const base = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0));
+      base.setUTCDate(base.getUTCDate() + days);
+      due_at_iso = base.toISOString();
+    }
   }
 
   // Try RPC with borrowed_at support first; fallback if arg not accepted
