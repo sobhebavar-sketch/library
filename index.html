@@ -1094,8 +1094,17 @@ document.addEventListener('DOMContentLoaded', function(){
       dateFormat: "Y-m-d",
       altInput: true,
       altFormat: "Y/m/d",
-      // use Persian locale if available
-      locale: (flatpickr.l10ns && flatpickr.l10ns.fa) ? flatpickr.l10ns.fa : undefined
+      // Persian locale
+      locale: (flatpickr.l10ns && flatpickr.l10ns.fa) ? flatpickr.l10ns.fa : undefined,
+      // Robust Jalali plugin detection (supports multiple globals)
+      plugins: (function(){
+        try{
+          if (window.jalaliDate) return [ new window.jalaliDate() ];
+          if (window.JalaliDate) return [ new window.JalaliDate() ];
+          if (window.flatpickrJalaliSupport && window.flatpickrJalaliSupport.jalaliDate) return [ new window.flatpickrJalaliSupport.jalaliDate() ];
+        }catch(_){}
+        return [];
+      })()
     };
     var borrowed = document.querySelector('#loan_borrowed');
     var due = document.querySelector('#loan_due');
