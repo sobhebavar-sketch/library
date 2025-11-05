@@ -190,13 +190,13 @@ const $ = (sel)=> document.querySelector(sel);
 const $$ = (sel)=> Array.from(document.querySelectorAll(sel));
 const fmtDate = (s)=>{
   try{
-    if(window.persianDate){
-      return new persianDate(new Date(s)).format('YYYY/MM/DD');
-    }
-  }catch(e){}
-  try{
-    return new Date(s).toLocaleDateString('fa-IR');
-  }catch(e){ return s||'—'; }
+    if(!s) return '—';
+    const d = new Date(s);
+    const j = g2j(d.getFullYear(), d.getMonth()+1, d.getDate());
+    return fmtJ(j[0], j[1], j[2]);
+  }catch(e){
+    try{ return new Date(s).toLocaleDateString('fa-IR'); }catch(_){ return s||'—'; }
+  }
 };
 const toast = (msg)=>{ const el=document.createElement('div'); el.className='fixed bottom-4 right-4 bg-black/80 text-white px-3 py-2 rounded-xl text-sm'; el.textContent=msg; document.body.appendChild(el); setTimeout(()=>el.remove(),3000); };
 
@@ -425,7 +425,7 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
   if (bStr) {
     try {
       const parts = bStr.replaceAll('-', '/').split('/').map(x=>parseInt(x,10));
-      const pb = new persianDate([parts[0], parts[1], parts[2]]).toGregorian();
+      const pb = j2g(parts[0], parts[1], parts[2]);
       const gb = new Date(pb[0], pb[1]-1, pb[2], 12, 0, 0);
       borrowed_at_iso = gb.toISOString();
     } catch(e){}
@@ -438,7 +438,7 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
   if (dueStr) {
     try {
       const parts = dueStr.replaceAll('-', '/').split('/').map(x=>parseInt(x,10));
-      const pd = new persianDate([parts[0], parts[1], parts[2]]).toGregorian();
+      const pd = j2g(parts[0], parts[1], parts[2]);
       const g = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0);
       due_at_iso = g.toISOString();
     } catch(e){}
@@ -556,54 +556,7 @@ async function loadLoans(){
 
 
 async function extendLoan(id){
-  // Load loan & defaults
-  const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
-  if(error || !l){ toast('یافت نشد'); return; }
-  const { data: st } = await supabase.from('settings').select('default_renew_days').eq('id',1).maybeSingle();
-  const addDays = st?.default_renew_days || 7;
-
-  const base = l.due_at ? new Date(l.due_at) : new Date();
-  const newDue = new Date(base.getTime() + addDays*24*3600*1000);
-
-  const modal = document.getElementById('extend-modal');
-  const inp = document.getElementById('extend_due');
-  const btnOk = document.getElementById('extend_ok');
-  const btnCancel = document.getElementById('extend_cancel');
-
-  // Prefill Jalaali text
-  try{
-    const j = g2j(newDue.getFullYear(), newDue.getMonth()+1, newDue.getDate());
-    inp.value = fmtJ(j[0], j[1], j[2]);
-  }catch(_){ inp.value = ''; }
-
-  // Initialize datepicker same as loan_due, if available
-  try{
-    const loanDue = document.getElementById('loan_due');
-    if (loanDue && loanDue._flatpickr && window.flatpickr) {
-      const cfg = Object.assign({}, loanDue._flatpickr.config);
-      if (inp._flatpickr) inp._flatpickr.destroy();
-      window.flatpickr(inp, cfg);
-      inp._flatpickr.setDate(newDue, true);
-    }
-  }catch(_){}
-
-  // Show modal
-  modal.classList.remove('hidden'); modal.classList.add('flex');
-
-  const handlerOk = async ()=>{
-    const parts = (inp.value||'').replaceAll('-', '/').split('/').map(s=>parseInt(s,10));
-    if(parts.length<3 || parts.some(isNaN)){ toast('تاریخ نامعتبر'); return; }
-    const g = j2g(parts[0], parts[1], parts[2]);
-    const due_at = new Date(g[0], g[1]-1, g[2], 12, 0, 0);
-    const payload = { due_at: due_at.toISOString(), renewals_count: (l.renewals_count||0) + 1 };
-    const { error: e2 } = await supabase.from('loans').update(payload).eq('id', id);
-    if(e2){ toast(e2.message); return; }
-    toast('تمدید شد');
-    modal.classList.add('hidden'); modal.classList.remove('flex');
-    btnOk.removeEventListener('click', handlerOk);
-    btnCancel.removeEventListener('click', handlerCancel);
-    loadLoans();
-  };
+  // Load loan & defaults  };
   const handlerCancel = ()=>{
     modal.classList.add('hidden'); modal.classList.remove('flex');
     btnOk.removeEventListener('click', handlerOk);
@@ -710,15 +663,10 @@ function openModal(id){ const el=document.getElementById(id); if(!el) return; el
 function closeModal(id){ const el=document.getElementById(id); if(!el) return; el.classList.add('hidden'); el.classList.remove('flex'); }
 
 // === Datepicker init ===
-function initPersianPicker(selector){
-  if (typeof $ === 'function' && typeof $.fn !== 'undefined' && $.fn.persianDatepicker){
-    $(selector).persianDatepicker({ format: 'YYYY/MM/DD', initialValue: false, autoClose: true });
-  }
-}
-
+  // persianDatepicker (external) removed; using flatpickr config clone instead.
 // Init loan due picker on page
 document.addEventListener('DOMContentLoaded', ()=>{
-  initPersianPicker('#loan_due');
+  initJalaliPicker('#loan_due');
 });
 
 // === Book edit via modal ===
@@ -783,38 +731,110 @@ document.getElementById('formMemberModal')?.addEventListener('submit', async (e)
 document.getElementById('btnAddMember')?.addEventListener('click', openAddMember);
 
 // === Loan edit via modal & datepickers ===
-async function editLoan(id){
-  const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
-  if(error || !l){ toast('یافت نشد'); return; }
-  document.getElementById('ml_id').value = l.id;
-  // Pre-fill Persian dates
-  try{
-    document.getElementById('ml_borrowed').value = new persianDate(new Date(l.borrowed_at)).format('YYYY/MM/DD');
-  }catch(e){ document.getElementById('ml_borrowed').value=''; }
-  try{
-    document.getElementById('ml_due').value = new persianDate(new Date(l.due_at)).format('YYYY/MM/DD');
-  }catch(e){ document.getElementById('ml_due').value=''; }
-  document.getElementById('ml_renewals').value = (l.renewals_count ?? 0);
-  openModal('modalLoan');
-  initPersianPicker('#ml_borrowed'); initPersianPicker('#ml_due');
-}
 
-document.getElementById('formLoanModal')?.addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const id = parseInt(document.getElementById('ml_id').value,10);
-  const b = document.getElementById('ml_borrowed').value.trim();
-  const d = document.getElementById('ml_due').value.trim();
-  const r = parseInt(document.getElementById('ml_renewals').value,10) || 0;
-  let borrowed_at = null, due_at = null;
-  try{ const pb = new persianDate(b.split('/').map(Number)).toGregorian(); borrowed_at = new Date(pb[0], pb[1]-1, pb[2], 12, 0, 0).toISOString(); }catch(e){}
-  try{ const pd = new persianDate(d.split('/').map(Number)).toGregorian(); due_at = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0).toISOString(); }catch(e){}
-  const payload = { renewals_count: r };
-  if(borrowed_at) payload.borrowed_at = borrowed_at;
-  if(due_at) payload.due_at = due_at;
-  const { error } = await supabase.from('loans').update(payload).eq('id', id);
-  if(error){ toast(error.message); return; }
-  toast('به‌روزرسانی شد'); closeModal('modalLoan'); loadLoans();
-});
+async function editLoan(id){
+  // Load loan
+  const { data: l, error } = await supabase.from('loans')
+    .select('id, member_id, borrowed_at, due_at, members:member_id(first_name,last_name)')
+    .eq('id', id).maybeSingle();
+  if(error || !l){ toast('یافت نشد'); return; }
+
+  const modal = $('#edit-loan-modal');
+  const q = $('#edit_member_query');
+  const res = $('#edit_member_results');
+  const inpBorrowed = $('#edit_borrowed');
+  const inpDue = $('#edit_due');
+  const btnSave = $('#edit_loan_save');
+  const btnCancel = $('#edit_loan_cancel');
+
+  // helper to set jalali to inputs
+  const setJalali = (el, d)=>{
+    const j = g2j(d.getFullYear(), d.getMonth()+1, d.getDate());
+    el.value = fmtJ(j[0], j[1], j[2]);
+  };
+
+  // Prefill fields
+  try{
+    const b = l.borrowed_at ? new Date(l.borrowed_at) : new Date();
+    const d = l.due_at ? new Date(l.due_at) : new Date();
+    setJalali(inpBorrowed, b);
+    setJalali(inpDue, d);
+  }catch(_){}
+
+  // Show current member
+  res.innerHTML = '';
+  if(l.members){
+    const nm = `${l.members.first_name||''} ${l.members.last_name||''}`.trim();
+    const chip = document.createElement('button');
+    chip.className = 'chip px-2 py-1 rounded-lg mr-1 mb-1 bg-indigo-700';
+    chip.textContent = nm || '—';
+    chip.dataset.id = l.member_id;
+    res.appendChild(chip);
+    res.dataset.sel = String(l.member_id);
+  } else { res.dataset.sel = ''; }
+
+  // Init datepickers same as loan_form
+  try{
+    const loanBorrowed = document.getElementById('loan_borrowed');
+    if (loanBorrowed && loanBorrowed._flatpickr && window.flatpickr) {
+      const cfg = Object.assign({}, loanBorrowed._flatpickr.config);
+      if (inpBorrowed._flatpickr) inpBorrowed._flatpickr.destroy();
+      window.flatpickr(inpBorrowed, cfg);
+      inpBorrowed._flatpickr.setDate(l.borrowed_at ? new Date(l.borrowed_at) : new Date(), true);
+    }
+    const loanDue = document.getElementById('loan_due');
+    if (loanDue && loanDue._flatpickr && window.flatpickr) {
+      const cfg2 = Object.assign({}, loanDue._flatpickr.config);
+      if (inpDue._flatpickr) inpDue._flatpickr.destroy();
+      window.flatpickr(inpDue, cfg2);
+      inpDue._flatpickr.setDate(l.due_at ? new Date(l.due_at) : new Date(), true);
+    }
+  }catch(_){}
+
+  // Member search
+  q.oninput = async (e)=>{
+    const s = e.target.value.trim();
+    if(!s){ res.innerHTML=''; res.dataset.sel=''; return; }
+    let { data } = await supabase.from('members')
+      .select('id,first_name,last_name,student_id')
+      .or(`first_name.ilike.%${s}%,last_name.ilike.%${s}%,student_id.ilike.%${s}%`)
+      .limit(10);
+    res.innerHTML = (data||[]).map(m=>`<button class='chip px-2 py-1 rounded-lg mr-1 mb-1 bg-slate-600' data-id='${m.id}'>${m.first_name||''} ${m.last_name||''} (${m.student_id||''})</button>`).join('');
+    $$('#edit_member_results button').forEach(b=> b.onclick = ()=>{ res.dataset.sel=b.dataset.id; toast('عضو انتخاب شد'); });
+  };
+
+  // Show modal
+  modal.classList.remove('hidden'); modal.classList.add('flex');
+
+  const onCancel = ()=>{
+    modal.classList.add('hidden'); modal.classList.remove('flex');
+    btnSave.removeEventListener('click', onSave);
+    btnCancel.removeEventListener('click', onCancel);
+  };
+
+  const onSave = async ()=>{
+    // Parse Jalali inputs
+    const bp = (inpBorrowed.value||'').replaceAll('-', '/').split('/').map(Number);
+    const dp = (inpDue.value||'').replaceAll('-', '/').split('/').map(Number);
+    if(bp.length<3 || dp.length<3 || bp.some(isNaN) || dp.some(isNaN)){ toast('تاریخ نامعتبر'); return; }
+    const bg = j2g(bp[0], bp[1], bp[2]);
+    const dg = j2g(dp[0], dp[1], dp[2]);
+    const payload = {
+      borrowed_at: new Date(bg[0], bg[1]-1, bg[2], 12, 0, 0).toISOString(),
+      due_at: new Date(dg[0], dg[1]-1, dg[2], 12, 0, 0).toISOString()
+    };
+    const sel = res.dataset.sel ? parseInt(res.dataset.sel,10) : null;
+    if(sel && sel !== l.member_id) payload.member_id = sel;
+    const { error: e2 } = await supabase.from('loans').update(payload).eq('id', id);
+    if(e2){ toast(e2.message || 'خطا در ذخیره'); return; }
+    toast('امانت ویرایش شد');
+    onCancel();
+    loadLoans();
+  };
+
+  btnSave.addEventListener('click', onSave);
+  btnCancel.addEventListener('click', onCancel);
+}
 
 
 </script>
@@ -892,13 +912,11 @@ document.getElementById('formLoanModal')?.addEventListener('submit', async (e)=>
 <script>
 // ---------- Robust Persian datepicker binding ----------
 (function(){
-  function ready(){ return window.jQuery && jQuery.fn && jQuery.fn.persianDatepicker; }
   function bindOnce(selector){
     if(!ready()) return false;
     try{
       jQuery(selector).each(function(){
         if(this.dataset.pdBound==='1') return;
-        jQuery(this).persianDatepicker({ format:'YYYY/MM/DD', initialValue:false, autoClose:true });
         this.dataset.pdBound='1';
       });
       return true;
@@ -1158,6 +1176,50 @@ function fmtJ(y,m,d){ return `${y}/${pad2(m)}/${pad2(d)}`; }
   </div>
 </div>
 
+
+
+<!-- Edit Loan Modal -->
+<div id="edit-loan-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+  <div class="bg-slate-800 text-white rounded-2xl p-4 w-[95%] max-w-2xl space-y-4">
+    <div class="text-lg font-bold">ویرایش امانت</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="space-y-2">
+        <label class="text-sm">امانت‌گیرنده</label>
+        <input id="edit_member_query" type="text" class="rounded-xl px-3 py-2 w-full bg-slate-700" placeholder="نام / نام خانوادگی / شماره دانشجویی" />
+        <div id="edit_member_results" class="flex flex-wrap gap-1"></div>
+        <div class="text-xs opacity-70">برای تغییر امانت‌گیرنده، نام را جست‌وجو و انتخاب کنید.</div>
+      </div>
+      <div class="space-y-2">
+        <label class="text-sm">تاریخ ثبت امانت (شمسی)</label>
+        <input id="edit_borrowed" type="text" class="rounded-xl px-3 py-2 w-full bg-slate-700" placeholder="YYYY/MM/DD" />
+      </div>
+      <div class="space-y-2">
+        <label class="text-sm">تاریخ سررسید (شمسی)</label>
+        <input id="edit_due" type="text" class="rounded-xl px-3 py-2 w-full bg-slate-700" placeholder="YYYY/MM/DD" />
+      </div>
+    </div>
+    <div class="flex gap-2 justify-end pt-2">
+      <button id="edit_loan_cancel" class="px-3 py-2 rounded-xl bg-slate-600">انصراف</button>
+      <button id="edit_loan_save" class="px-3 py-2 rounded-xl bg-indigo-600">ذخیره تغییرات</button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+function initJalaliPicker(selector){
+  try{
+    const loanDue = document.getElementById('loan_due');
+    if (loanDue && loanDue._flatpickr && window.flatpickr){
+      const cfg = Object.assign({}, loanDue._flatpickr.config);
+      document.querySelectorAll(selector).forEach(el=>{
+        if(el._flatpickr) el._flatpickr.destroy();
+        window.flatpickr(el, cfg);
+      });
+    }
+  }catch(_){}
+}
+</script>
 
 </body>
 </html>
