@@ -9,10 +9,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/persian-date@1.1.0/dist/persian-date.js">
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-  <script src="https://unpkg.com/persian-date@1.1.0/dist/persian-date.js"></script>
-  <script src="https://unpkg.com/persian-date@1.1.0/dist/persian-date.js"></script>
   <style>
     html, body { height: 100%; background: #0b1020; }
     .glass { background: rgba(255,255,255,0.06); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.08); }
@@ -20,6 +17,9 @@
     input, select, textarea { background: rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.12); }
     label { font-size: 12px; color: rgba(226,232,240,.8); }
   </style>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/flatpickr.min.css">
+
 </head>
 <body class="text-slate-100">
   <div id="app" class="max-w-7xl mx-auto p-4 sm:p-6">
@@ -901,7 +901,7 @@ document.addEventListener('DOMContentLoaded', function(){
   function ready(){ return typeof window.persianDate === 'function'; }
   function loadScript(cb){
     var s = document.createElement('script');
-    s.src = "https://unpkg.com/persian-date@1.1.0/dist/persian-date.js";
+    s.src = "https://cdn.jsdelivr.net/npm/persian-date@1.2.0/dist/persian-date.js";
     s.onload = cb;
     document.head.appendChild(s);
   }
@@ -922,36 +922,47 @@ document.addEventListener('DOMContentLoaded', function(){
 })();
 </script>
 
+<script src="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/flatpickr.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/l10n/jalaliDate.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/l10n/fa.js"></script>
 <script>
+// Flatpickr + Jalali init for borrowed/due fields + calendar buttons
 document.addEventListener('DOMContentLoaded', function(){
   function bind(){
-    try{
-      if (window.jQuery && jQuery.fn && jQuery.fn.persianDatepicker){
-        ['#loan_borrowed', '#loan_due'].forEach(function(sel){
-          var $el = jQuery(sel);
-          if($el.length && !$el.data('pdbound')){
-            $el.persianDatepicker({ observer:true, format:'YYYY/MM/DD', initialValue:false, autoClose:true });
-            $el.data('pdbound', 1);
-          }
+    if(!window.flatpickr) return;
+    var base = {
+      disableMobile: false,
+      dateFormat: "Y/m/d",
+      // use Persian locale if available
+      locale: (flatpickr.l10ns && flatpickr.l10ns.fa) ? flatpickr.l10ns.fa : undefined
+    };
+    var borrowed = document.querySelector('#loan_borrowed');
+    var due = document.querySelector('#loan_due');
+    if(borrowed && !borrowed._fp){
+      borrowed._fp = flatpickr(borrowed, Object.assign({}, base, { }));
+    }
+    if(due && !due._fp){
+      due._fp = flatpickr(due, Object.assign({}, base, { }));
+    }
+    // Buttons
+    [['btn_open_borrowed', borrowed], ['btn_open_due', due]].forEach(function([btnId, input]){
+      var btn = document.getElementById(btnId);
+      if(btn && input && !btn.dataset.bound){
+        btn.addEventListener('click', function(e){
+          e.preventDefault();
+          if(input._fp){ input._fp.open(); }
+          else{ input.focus(); }
         });
-        [['btn_open_borrowed','#loan_borrowed'],['btn_open_due','#loan_due']].forEach(function(x){
-          var btn=document.getElementById(x[0]);
-          if(btn && !btn.dataset.bound){
-            btn.addEventListener('click', function(e){
-              e.preventDefault();
-              try{ jQuery(x[1]).persianDatepicker('show'); }catch(e){}
-            });
-            btn.dataset.bound='1';
-          }
-        });
+        btn.dataset.bound = '1';
       }
-    }catch(e){ console.error('pd init error', e); }
+    });
   }
   bind();
-  var tab=document.getElementById('tab-admin-loans');
+  // Rebind when loans tab toggles visibility
+  var tab = document.getElementById('tab-admin-loans');
   if(tab){
-    var mo=new MutationObserver(function(){ bind(); });
-    mo.observe(tab,{attributes:true, attributeFilter:['class','style']});
+    var mo = new MutationObserver(function(){ bind(); });
+    mo.observe(tab, {attributes:true, attributeFilter:['class','style']});
   }
 });
 </script>
