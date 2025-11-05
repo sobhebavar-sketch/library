@@ -921,5 +921,51 @@ document.addEventListener('DOMContentLoaded', function(){
   if(!ready()){ boot(); }
 })();
 </script>
+
+<!-- ==== FIX: Proper Persian (Jalali) datepicker on loan form (borrowed & due) ==== -->
+<script>
+(function(){
+  function ready(){ return window.jQuery && jQuery.fn && jQuery.fn.persianDatepicker; }
+  function bind(){
+    try{
+      var $b = jQuery('#loan_borrowed');
+      var $d = jQuery('#loan_due');
+      if($b.length && !$b.data('pd')){
+        $b.persianDatepicker({ format:'YYYY/MM/DD', initialValue:false, autoClose:true });
+        $b.data('pd', 1);
+      }
+      if($d.length && !$d.data('pd')){
+        $d.persianDatepicker({ format:'YYYY/MM/DD', initialValue:false, autoClose:true });
+        $d.data('pd', 1);
+      }
+      var btnB = document.getElementById('btn_open_borrowed');
+      if(btnB && !btnB.dataset.bound){
+        btnB.addEventListener('click', function(){
+          try{ $b.persianDatepicker('show'); }catch(e){ $b.trigger('focus'); }
+        });
+        btnB.dataset.bound = '1';
+      }
+      var btnD = document.getElementById('btn_open_due');
+      if(btnD && !btnD.dataset.bound){
+        btnD.addEventListener('click', function(){
+          try{ $d.persianDatepicker('show'); }catch(e){ $d.trigger('focus'); }
+        });
+        btnD.dataset.bound = '1';
+      }
+    }catch(e){ console.error('datepicker bind error', e); }
+  }
+  function boot(){ if(!ready()) { setTimeout(boot, 150); return; } bind(); }
+  document.addEventListener('DOMContentLoaded', boot);
+  // Re-bind when switching to Loans tab
+  document.addEventListener('DOMContentLoaded', function(){
+    var loansTab = document.querySelector('[data-tab="admin-loans"]');
+    if(loansTab && !loansTab.dataset.bound){
+      loansTab.addEventListener('click', function(){ setTimeout(boot, 50); });
+      loansTab.dataset.bound = '1';
+    }
+  });
+})();
+</script>
+
 </body>
 </html>
