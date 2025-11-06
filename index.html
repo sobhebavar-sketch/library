@@ -584,7 +584,7 @@ async function extendLoan(id){
       const cfg = Object.assign({}, loanDue._flatpickr.config);
       if (inp._flatpickr) inp._flatpickr.destroy();
       window.flatpickr(inp, cfg);
-      inp._flatpickr.setDate(newDue, true);
+      // setDate removed (prevents drift)
     }
   }catch(_){}
 
@@ -827,14 +827,14 @@ async function editLoan(id){
       const cfg = Object.assign({}, loanBorrowed._flatpickr.config);
       if (inpBorrowed._flatpickr) inpBorrowed._flatpickr.destroy();
       window.flatpickr(inpBorrowed, cfg);
-      inpBorrowed._flatpickr.setDate(l.borrowed_at ? new Date(l.borrowed_at) : new Date(), true);
+      // setDate removed to avoid drift
     }
     const loanDue = document.getElementById('loan_due');
     if (loanDue && loanDue._flatpickr && window.flatpickr) {
       const cfg2 = Object.assign({}, loanDue._flatpickr.config);
       if (inpDue._flatpickr) inpDue._flatpickr.destroy();
       window.flatpickr(inpDue, cfg2);
-      inpDue._flatpickr.setDate(l.due_at ? new Date(l.due_at) : new Date(), true);
+      // setDate removed to avoid drift
     }
   }catch(_){}
 
@@ -959,6 +959,7 @@ async function editLoan(id){
 <script>
 // ---------- Robust Persian datepicker binding ----------
 (function(){
+  function ready(){ return document.readyState==='interactive' || document.readyState==='complete'; }
   function bindOnce(selector){
     if(!ready()) return false;
     try{
@@ -1288,7 +1289,7 @@ async function setDefaultLoanDates(){
     if(dEl) dEl.value = fmtJ(dj[0], dj[1], dj[2]);
 
     // If flatpickr is bound, setDate using Gregorian Date objects
-    // setDate calls removed to prevent Jalali/Gregorian drift
+    // trailing setDate block removed
   }catch(e){}
 }
 </script>
