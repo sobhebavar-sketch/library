@@ -764,42 +764,58 @@ async function editBook(b){ /* replaced by modal version */ return window.editBo
 
 document.getElementById('formBookModal')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
-  const id = parseInt(document.getElementById('mb_id').value, 10);
-  const wantRemove = !!document.getElementById('mb_cover_remove')?.checked;
-  const oldUrl = document.getElementById('mb_old_cover_url')?.value || '';
-  let cover_url_final = null;
-  const f = document.getElementById('mb_cover')?.files?.[0];
-  let link = (document.getElementById('mb_cover_url')?.value||'').trim(); link = resolveCoverLink(link);
-  if(wantRemove){
-    // try to delete the old file from storage if it belongs to our bucket
-    const m = oldUrl.match(/\/object\/public\/book_covers\/(.+)$/);
-    if(m){ try{ const del = await supabase.storage.from('book_covers').remove([m[1]]); if(del?.error){ console.warn(del.error); } }catch(e){ console.warn(e); } }
-    cover_url_final = null;
-  } else if(f){
-    const safeName = ('c'+Date.now()+'-'+f.name).replace(/[^a-zA-Z0-9\.\-_]/g,'_');
-    const up = await supabase.storage.from('book_covers').upload(safeName, f, { contentType: f.type, upsert: true });
-    if(up.error){ toast(up.error.message); return; }
-    const pub = supabase.storage.from('book_covers').getPublicUrl(up.data.path); cover_url_final = pub.data.publicUrl;
-  } else if(link) {
-    cover_url_final = link;
+  try{
+    const id = parseInt(document.getElementById('mb_id').value, 10);
+    const wantRemove = !!document.getElementById('mb_cover_remove')?.checked;
+    const oldUrl = document.getElementById('mb_old_cover_url')?.value || '';
+    let cover_url_final = null;
+
+    const f = document.getElementById('mb_cover')?.files?.[0];
+    let link = (document.getElementById('mb_cover_url')?.value||'').trim();
+    link = resolveCoverLink(link);
+
+    if(wantRemove){
+      // try to delete old from storage if under our public bucket path
+      const m = oldUrl.match(/\/object\/public\/book_covers\/(.+)$/);
+      if(m){
+        try { const del = await supabase.storage.from('book_covers').remove([m[1]]); if(del?.error) console.warn(del.error); } catch(_){}
+      }
+      cover_url_final = null;
+    } else if(f){
+      const safeName = ('c'+Date.now()+'-'+f.name).replace(/[^a-zA-Z0-9\.\-_]/g,'_');
+      const up = await supabase.storage.from('book_covers').upload(safeName, f, { contentType: f.type, upsert: true });
+      if(up.error){ toast(up.error.message); return; }
+      const pub = supabase.storage.from('book_covers').getPublicUrl(up.data.path);
+      cover_url_final = pub.data.publicUrl || null;
+    } else if(link){
+      cover_url_final = link;
+    }
+
+    const payload = {
+      title: document.getElementById('mb_title').value.trim(),
+      author: document.getElementById('mb_author').value.trim() || null,
+      translator: document.getElementById('mb_translator').value.trim() || null,
+      subject: document.getElementById('mb_subject').value.trim() || null,
+      keywords: (document.getElementById('mb_keywords').value||'').split(';').map(s=>s.trim()).filter(Boolean),
+      publisher: document.getElementById('mb_publisher').value.trim() || null,
+      isbn: document.getElementById('mb_isbn').value.trim() || null,
+      published_year: parseInt(document.getElementById('mb_published_year').value,10) || null,
+      pages: parseInt(document.getElementById('mb_pages').value,10) || null,
+      total_copies: parseInt(document.getElementById('mb_total_copies').value,10) || 1,
+    };
+    if(wantRemove){ payload.cover_url = null; }
+    else if(cover_url_final !== null){ payload.cover_url = cover_url_final; }
+
+    const { error } = await supabase.from('books').update(payload).eq('id', id);
+    if(error){ toast(error.message); return; }
+    toast('کتاب به‌روزرسانی شد');
+    closeModal('modalBook');
+    if(typeof loadCatalog==='function') loadCatalog();
+    if(typeof loadAdminBooks==='function') loadAdminBooks();
+  }catch(err){
+    console.error(err);
+    toast('خطا در ذخیره کتاب');
   }
-  const payload = {
-    title: document.getElementById('mb_title').value.trim(),
-    author: document.getElementById('mb_author').value.trim() || null,
-    translator: document.getElementById('mb_translator').value.trim() || null,
-    published_year: parseInt(document.getElementById('mb_published_year').value,10) || null,
-    pages: parseInt(document.getElementById('mb_pages').value,10) || null,
-    subject: document.getElementById('mb_subject').value.trim() || null,
-    keywords: (document.getElementById('mb_keywords').value||'').split(';').map(s=>s.trim()).filter(Boolean),
-    publisher: document.getElementById('mb_publisher').value.trim() || null,
-    isbn: document.getElementById('mb_isbn').value.trim() || null,
-    total_copies: parseInt(document.getElementById('mb_total_copies').value,10) || 1
-  };
-  if(wantRemove){ payload.cover_url = null; } else if(cover_url_final){ payload.cover_url = cover_url_final; }
-  const { error } = await supabase.from('books').update(payload).eq('id', id);
-  if(error){ toast(error.message); return; }
-  toast('ویرایش شد');
-  closeModal('modalBook'); loadCatalog(); loadAdminBooks();
 });
 
 // === Member add/edit via modal ===
