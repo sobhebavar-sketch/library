@@ -1,6 +1,9 @@
 <!doctype html>
 <html lang="fa" dir="rtl">
 <head>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+<meta http-equiv="Pragma" content="no-cache"/>
+<meta http-equiv="Expires" content="0"/>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>کتابخانه کانون مهدویت صبح باور</title>
@@ -180,7 +183,8 @@
 
     <footer class="mt-8 text-center text-xs text-slate-400/80">
       کانون مهدویت صبح باور • معاونت فرهنگی و اجتماعی دانشگاه صنعتی اصفهان
-    </footer>
+    <div class="fixed bottom-2 left-2 text-[10px] px-2 py-1 rounded bg-slate-700/70 border border-white/10">Build v39</div>
+</footer>
   </div>
 
 <script>
@@ -812,6 +816,7 @@ document.getElementById('formBookModal')?.addEventListener('submit', async (e)=>
   let upd = await supabase.from('books').update(payload).eq('id', id).select('id, cover_url');
   const dbg = document.getElementById('mb_debug');
   if(upd.error){ console.error('[editBook] update error:', upd.error); if(dbg) dbg.textContent = 'خطای ذخیره: ' + (upd.error.message||upd.error.code||'نامشخص'); toast(upd.error.message); return; }
+  if(!upd.data || upd.data.length===0){ if(dbg) dbg.textContent = 'هیچ ردیفی به‌روزرسانی نشد (ممکن است RLS/کش/فایل قدیمی باشد)'; toast('هیچ ردیفی به‌روزرسانی نشد'); return; }
   const res = JSON.stringify(upd.data||[], null, 0);
   if(dbg) dbg.textContent = 'نتیجه ذخیره: ' + res;
   console.log('[editBook] update result:', upd.data);
