@@ -221,6 +221,26 @@ const download = (filename, content, mime='text/csv')=>{
   const url = URL.createObjectURL(blob); const a = document.createElement('a');
   a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url);
 };
+// Normalizes/whitelists cover link inputs and builds a direct URL for common hosts
+function resolveCoverLink(u){
+  try{
+    u = (u||'').trim();
+    if(!u) return '';
+    // Force https for http links
+    if(/^http:\/\//i.test(u)) u = 'https://' + u.slice(7);
+    // Google Drive share links -> direct view
+    // e.g. https://drive.google.com/file/d/<ID>/view?usp=sharing -> https://drive.google.com/uc?export=view&id=<ID>
+    const g = u.match(/drive\.google\.com\/(?:file\/d\/|open\?id=)([\w-]+)/i);
+    if(g){ return 'https://drive.google.com/uc?export=view&id=' + g[1]; }
+    // Dropbox sharing -> raw dl
+    // https://www.dropbox.com/s/<id>/<name>?dl=0 -> dl=1
+    if(/dropbox\.com\//i.test(u)){ return u.replace(/\?dl=0$/,'?dl=1'); }
+    // Telegra.ph or any standard https URL
+    if(/^https:\/\//i.test(u) || /^data:image\//i.test(u)) return u;
+    return '';
+  }catch(_){ return ''; }
+}
+
 
 let user = null, profile = null;
 async function refreshSession(){
@@ -1042,7 +1062,60 @@ window.editMember = async function(input){
   }catch(e){ console.error(e); toast('خطا در ویرایش عضو'); }
 };
 
-// removed conflicting duplicate binder block
+// ---------- Prevent refresh & persist forms ----------
+document.addEventListener('DOMContentLoaded', function(){
+  const fb = document.getElementById('formBookModal');
+  if(fb && !fb.dataset.bound){
+    fb.addEventListener('submit', async function(e){
+      e.preventDefault();
+      try{
+        const id = parseInt(document.getElementById('mb_id').value,10);
+        const payload = {
+          title: document.getElementById('mb_title').value.trim(),
+          author: document.getElementById('mb_author').value.trim() || null,
+          translator: document.getElementById('mb_translator').value.trim() || null,
+          subject: document.getElementById('mb_subject').value.trim() || null,
+          keywords: (document.getElementById('mb_keywords').value||'').split(';').map(s=>s.trim()).filter(Boolean),
+          publisher: document.getElementById('mb_publisher').value.trim() || null,
+          isbn: document.getElementById('mb_isbn').value.trim() || null,
+          published_year: parseInt(document.getElementById('mb_published_year').value,10) || null,
+          pages: parseInt(document.getElementById('mb_pages').value,10) || null,
+          total_copies: parseInt(document.getElementById('mb_total_copies').value,10) || 1,
+        };
+        const { error } = await supabase.from('books').update(payload).eq('id', id);
+        if(error) return toast(error.message);
+        toast('کتاب به‌روزرسانی شد'); closeModal('modalBook');
+        if(typeof loadCatalog==='function') loadCatalog();
+        if(typeof loadAdminBooks==='function') loadAdminBooks();
+      }catch(err){ console.error(err); toast('خطا در ذخیره کتاب'); }
+    });
+    fb.dataset.bound = '1';
+  }
+
+  const fm = document.getElementById('formMemberModal');
+  if(fm && !fm.dataset.bound){
+    fm.addEventListener('submit', async function(e){
+      e.preventDefault();
+      try{
+        const id = parseInt(document.getElementById('mm_id').value,10);
+        const payload = {
+          first_name: document.getElementById('mm_first_name').value.trim() || null,
+          last_name: document.getElementById('mm_last_name').value.trim() || null,
+          entry_year: parseInt(document.getElementById('mm_entry_year').value,10) || null,
+          degree: document.getElementById('mm_degree').value.trim() || null,
+          student_id: document.getElementById('mm_student_id').value.trim() || null,
+          phone: document.getElementById('mm_phone').value.trim() || null,
+          email: document.getElementById('mm_email').value.trim() || null,
+        };
+        const { error } = await supabase.from('members').update(payload).eq('id', id);
+        if(error) return toast(error.message);
+        toast('عضو به‌روزرسانی شد'); closeModal('modalMember');
+        if(typeof loadMembers==='function') loadMembers();
+      }catch(err){ console.error(err); toast('خطا در ذخیره عضو'); }
+    });
+    fm.dataset.bound = '1';
+  }
+});
 </script>
 
 <script>
@@ -1170,37 +1243,6 @@ function fmtJ(y,m,d){ return `${y}/${pad2(m)}/${pad2(d)}`; }
 // Helpers to normalize Persian/Arabic digits and validate Jalali input
 function toEnDigits(s){ if(!s) return s; return s.replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/-/g,'/'); }
 function normalizeJalali(s){ s=toEnDigits(String(s||'').trim()); const m=/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(s); if(!m) return ''; const y=+m[1], mo=+m[2], d=+m[3]; if(y<1200||y>1600||mo<1||mo>12) return ''; const md=(mo<=6)?31:((mo<=11)?30:29); if(d<1||d>md) return ''; return `${y}/${String(mo).padStart(2,'0')}/${String(d).padStart(2,'0')}`; }
-</script>
-<script>
-
-// ---- Cover link normalizer: turns common sharing links into direct image URLs ----
-function resolveCoverLink(s){
-  s = (s || '').trim();
-  if(!s) return '';
-  try{
-    var u = new URL(s);
-    // Google Drive: https://drive.google.com/file/d/<id>/view?usp=sharing
-    if(u.hostname.includes('drive.google.com')){
-      var m = u.pathname.match(/\/file\/d\/([^/]+)/);
-      if(m && m[1]){
-        return 'https://drive.google.com/uc?export=view&id=' + m[1];
-      }
-    }
-    // Dropbox: https://www.dropbox.com/s/<id>/file.jpg?dl=0 -> dl domain direct
-    if(u.hostname.endsWith('dropbox.com')){
-      var href = s.replace('www.dropbox.com', 'dl.dropboxusercontent.com');
-      href = href.replace('?dl=0','').replace('&dl=0','');
-      return href;
-    }
-    // GitHub raw: auto OK, otherwise keep as-is if http(s)
-    if(u.protocol === 'http:' || u.protocol === 'https:'){
-      return u.href;
-    }
-  }catch(e){
-    // ignore
-  }
-  return '';
-}
 </script>
 <script>
 // --- UTC-safe helpers to avoid DST / timezone drift ---
