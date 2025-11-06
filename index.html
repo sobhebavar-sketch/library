@@ -196,6 +196,7 @@ const fmtDate = (s)=>{
     try{ return new Date(s).toLocaleDateString('fa-IR'); }catch(_){ return s||'—'; }
   }
 };
+function is404(err){ try{ return (err && (err.code==="PGRST116" || (err.message||'').includes('rpc') || (err.status||'')===404)); }catch(_){ return false; } }
 const toast = (msg)=>{ const el=document.createElement('div'); el.className='fixed bottom-4 right-4 bg-black/80 text-white px-3 py-2 rounded-xl text-sm'; el.textContent=msg; document.body.appendChild(el); setTimeout(()=>el.remove(),3000); };
 
 function toCSV(rows){
@@ -440,8 +441,8 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
     } catch(e){}
   }
   if(!due_at_iso){
-    const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
-    const days = st?.default_loan_days || 14;
+    const { data: st } = await supabase.from('settings').select('default_loan_days,default_renew_days').eq('id',1).maybeSingle();
+    const days = (st?.default_loan_days ?? st?.default_renew_days ?? 14);
     due_at_iso = new Date(Date.now() + days*24*3600*1000).toISOString();
   }
 
@@ -455,32 +456,29 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
     p_borrowed_at: borrowed_at_iso
   };
   let res = await supabase.rpc('issue_loan', payload);
-  if(res.error){
-    // Retry without p_borrowed_at
-    payload = {
-      p_book_id: parseInt(bookId, 10),
-      p_member_id: parseInt(memberId, 10),
-      p_admin_id: user.id,
-      p_due_at: due_at_iso
-    };
+if(res.error){
+  // Fallback to direct insert when RPC is missing or incompatible
+  if(is404(res.error)){
+    let ins = await supabase.from('loans').insert({
+      book_id: parseInt(bookId,10),
+      member_id: parseInt(memberId,10),
+      admin_id: user.id,
+      borrowed_at: borrowed_at_iso,
+      due_at: due_at_iso
+    }).select().maybeSingle();
+    if(ins.error){ toast(ins.error.message || 'خطا در ثبت امانت'); return; }
+    loan = ins.data;
+  } else {
+    // Retry without p_borrowed_at via RPC
+    payload = { p_book_id: parseInt(bookId,10), p_member_id: parseInt(memberId,10), p_admin_id: user.id, p_due_at: due_at_iso };
     res = await supabase.rpc('issue_loan', payload);
     if(res.error){ toast(res.error.message || 'خطا در ثبت امانت'); return; }
     loan = res.data;
-    // If loan id returned, update borrowed_at explicitly
-    try{
-      if(loan && loan.id){
-        await supabase.from('loans').update({ borrowed_at: borrowed_at_iso }).eq('id', loan.id);
-      }
-    }catch(e){}
-  }else{
-    loan = res.data;
-    // If server didn't set borrowed_at, update
-    try{
-      if(loan && loan.id){
-        await supabase.from('loans').update({ borrowed_at: borrowed_at_iso }).eq('id', loan.id);
-      }
-    }catch(e){}
+    try{ if(loan && loan.id){ await supabase.from('loans').update({ borrowed_at: borrowed_at_iso }).eq('id', loan.id); } }catch(_){}
   }
+} else {
+  loan = res.data;
+}
 
   toast('امانت ثبت شد');
   // Reset quick inputs
@@ -489,17 +487,38 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
   loadCatalog(); loadLoans();
 });
 
+
+
 $('#loan_member_query')?.addEventListener('input', async (e)=>{
-  const q = e.target.value.trim(); if(!q){ $('#loan_member_results').innerHTML=''; $('#loan_member_results').dataset.sel=''; return; }
-  let { data } = await supabase.from('members').select('id,first_name,last_name,student_id').or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,student_id.ilike.%${q}%`).limit(8);
-  $('#loan_member_results').innerHTML = (data||[]).map(m=>`<button class='chip px-2 py-1 rounded-lg mr-1 mb-1' data-id='${m.id}'>${m.first_name||''} ${m.last_name||''} • ${m.student_id||''}</button>`).join('');
-  $$('#loan_member_results button').forEach(b=> b.onclick = ()=>{ $('#loan_member_results').dataset.sel=b.dataset.id; toast('عضو انتخاب شد'); });
+  const q = e.target.value.trim();
+  const box = $('#loan_member_results');
+  if(!q){ box.innerHTML=''; box.dataset.sel=''; return; }
+  let { data, error } = await supabase.from('members')
+    .select('id,first_name,last_name,student_id')
+    .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,student_id.ilike.%${q}%`)
+    .limit(8);
+  if(error){ box.innerHTML=''; return; }
+  box.innerHTML = (data||[]).map(m =>
+    `<button class="chip px-2 py-1 rounded" data-id="${m.id}">${m.first_name||''} ${m.last_name||''} • ${m.student_id||''}</button>`
+  ).join('');
+  $$('#loan_member_results button').forEach(b => b.onclick = () => { box.dataset.sel = b.dataset.id; toast('عضو انتخاب شد'); });
 });
+
+
 $('#loan_book_query')?.addEventListener('input', async (e)=>{
-  const q = e.target.value.trim(); if(!q){ $('#loan_book_results').innerHTML=''; $('#loan_book_results').dataset.sel=''; return; }
-  let { data } = await supabase.from('books').select('id,title,author,isbn,available_copies').or(`title.ilike.%${q}%,author.ilike.%${q}%,isbn.ilike.%${q}%`).gte('available_copies',1).limit(8);
-  $('#loan_book_results').innerHTML = (data||[]).map(b=>`<button class='chip px-2 py-1 rounded-lg mr-1 mb-1' data-id='${b.id}'>${b.title} ${b.author? '• '+b.author:''} ${b.isbn? '• '+b.isbn:''}</button>`).join('');
-  $$('#loan_book_results button').forEach(b=> b.onclick = ()=>{ $('#loan_book_results').dataset.sel=b.dataset.id; toast('کتاب انتخاب شد'); });
+  const q = e.target.value.trim();
+  const box = $('#loan_book_results');
+  if(!q){ box.innerHTML=''; box.dataset.sel=''; return; }
+  let { data, error } = await supabase.from('books')
+    .select('id,title,author,isbn,available_copies')
+    .or(`title.ilike.%${q}%,author.ilike.%${q}%,isbn.ilike.%${q}%`)
+    .gte('available_copies',1)
+    .limit(8);
+  if(error){ box.innerHTML=''; return; }
+  box.innerHTML = (data||[]).map(b =>
+    `<button class="chip px-2 py-1 rounded" data-id="${b.id}">${b.title||''}${b.author ? ' • '+b.author : ''}${b.isbn ? ' • '+b.isbn : ''}</button>`
+  ).join('');
+  $$('#loan_book_results button').forEach(b => b.onclick = () => { box.dataset.sel = b.dataset.id; toast('کتاب انتخاب شد'); });
 });
 
 async function loadLoans(){
@@ -553,7 +572,7 @@ async function extendLoan(id){
   // Load loan & defaults
   const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
   if(error || !l){ toast('یافت نشد'); return; }
-  const { data: st } = await supabase.from('settings').select('default_renew_days').eq('id',1).maybeSingle();
+  const { data: st } = await supabase.from('settings').select('default_loan_days,default_renew_days').eq('id',1).maybeSingle();
   const addDays = st?.default_renew_days || 7;
 
   const base = l.due_at ? new Date(l.due_at) : new Date();
@@ -1165,8 +1184,8 @@ function normalizeJalali(s){ s=toEnDigits(String(s||'').trim()); const m=/^(\d{4
 <script>
 async function setDefaultLoanDates(){
   try{
-    const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
-    const days = st?.default_loan_days || 14;
+    const { data: st } = await supabase.from('settings').select('default_loan_days,default_renew_days').eq('id',1).maybeSingle();
+    const days = (st?.default_loan_days ?? st?.default_renew_days ?? 14);
     const now = new Date();
     const due = new Date(now.getTime() + days*24*3600*1000);
 
