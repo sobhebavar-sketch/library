@@ -1,9 +1,6 @@
 <!doctype html>
 <html lang="fa" dir="rtl">
 <head>
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
-<meta http-equiv="Pragma" content="no-cache"/>
-<meta http-equiv="Expires" content="0"/>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>کتابخانه کانون مهدویت صبح باور</title>
@@ -183,8 +180,7 @@
 
     <footer class="mt-8 text-center text-xs text-slate-400/80">
       کانون مهدویت صبح باور • معاونت فرهنگی و اجتماعی دانشگاه صنعتی اصفهان
-    <div class="fixed bottom-2 left-2 text-[10px] px-2 py-1 rounded bg-slate-700/70 border border-white/10">Build v40</div>
-</footer>
+    </footer>
   </div>
 
 <script>
@@ -746,55 +742,27 @@ document.addEventListener('DOMContentLoaded', ()=>{
 let CURRENT_BOOK = null;
 async function editBook(b){ /* replaced by modal version */ return window.editBook(b); }
 
-
 document.getElementById('formBookModal')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const id = parseInt(document.getElementById('mb_id').value, 10);
   const wantRemove = !!document.getElementById('mb_cover_remove')?.checked;
   const oldUrl = document.getElementById('mb_old_cover_url')?.value || '';
-  const file = document.getElementById('mb_cover')?.files?.[0];
-  let link = (document.getElementById('mb_cover_url')?.value||'').trim();
-  link = resolveCoverLink(link);
-
   let cover_url_final = null;
-  let cover_action = 'none';
-
-  // Decide action
+  const f = document.getElementById('mb_cover')?.files?.[0];
+  let link = (document.getElementById('mb_cover_url')?.value||'').trim(); link = resolveCoverLink(link);
   if(wantRemove){
-    cover_action = 'remove';
-  }else if(file){
-    cover_action = 'upload';
-  }else if(link){
-    cover_action = 'link';
-  }
-
-  // Execute action
-  if(cover_action === 'remove'){
-    const path = getCoverObjectPath(oldUrl);
-    if(path){
-      try{
-        const del = await supabase.storage.from('book_covers').remove([path]);
-        if(del?.error){ console.warn('remove error', del.error); }
-      }catch(err){ console.warn('remove exception', err); }
-    }
+    // try to delete the old file from storage if it belongs to our bucket
+    const m = oldUrl.match(/\/object\/public\/book_covers\/(.+)$/);
+    if(m){ try{ const del = await supabase.storage.from('book_covers').remove([m[1]]); if(del?.error){ console.warn(del.error); } }catch(e){ console.warn(e); } }
     cover_url_final = null;
-    toast('جلد حذف خواهد شد');
-  }else if(cover_action === 'upload'){
-    const safeName = ('c'+Date.now()+'-'+file.name).replace(/[^a-zA-Z0-9\.\-_]/g,'_');
-    const up = await supabase.storage.from('book_covers').upload(safeName, file, { contentType: file.type, upsert: true });
+  } else if(f){
+    const safeName = ('c'+Date.now()+'-'+f.name).replace(/[^a-zA-Z0-9\.\-_]/g,'_');
+    const up = await supabase.storage.from('book_covers').upload(safeName, f, { contentType: f.type, upsert: true });
     if(up.error){ toast(up.error.message); return; }
-    const pub = supabase.storage.from('book_covers').getPublicUrl(up.data.path);
-    cover_url_final = pub.data.publicUrl;
-    const prev = getCoverObjectPath(oldUrl);
-    if(prev){
-      try{ await supabase.storage.from('book_covers').remove([prev]); }catch(err){ console.warn('remove old cover failed', err); }
-    }
-    toast('جلد به‌روزرسانی شد');
-  }else if(cover_action === 'link'){
+    const pub = supabase.storage.from('book_covers').getPublicUrl(up.data.path); cover_url_final = pub.data.publicUrl;
+  } else if(link) {
     cover_url_final = link;
-    toast('جلد با لینک تنظیم شد');
   }
-
   const payload = {
     title: document.getElementById('mb_title').value.trim(),
     author: document.getElementById('mb_author').value.trim() || null,
@@ -807,22 +775,13 @@ document.getElementById('formBookModal')?.addEventListener('submit', async (e)=>
     isbn: document.getElementById('mb_isbn').value.trim() || null,
     total_copies: parseInt(document.getElementById('mb_total_copies').value,10) || 1
   };
-  if(cover_action === 'none'){ toast('هیچ تغییری برای جلد انتخاب نشد'); }
-  if(cover_action !== 'none'){
-    payload.cover_url = cover_url_final; // null for remove; string for upload/link
-  }
-
-  console.log('[editBook] cover_action:', cover_action, { oldUrl, link, cover_url_final, payload });
-  let upd = await supabase.from('books').update(payload).eq('id', id).select('id, cover_url').single();
-  const dbg = document.getElementById('mb_debug');
-  if(upd.error){ console.error('[editBook] update error:', upd.error); if(dbg) dbg.textContent = 'خطای ذخیره: ' + (upd.error.message||upd.error.code||'نامشخص'); toast(upd.error.message); return; }
-  if(!upd.data || upd.data.length===0){ if(dbg) dbg.textContent = 'هیچ ردیفی به‌روزرسانی نشد (ممکن است RLS/کش/فایل قدیمی باشد)'; toast('هیچ ردیفی به‌روزرسانی نشد'); return; }
-  const res = JSON.stringify(upd.data||[], null, 0);
-  if(dbg) dbg.textContent = 'نتیجه ذخیره: ' + res;
-  console.log('[editBook] update result:', upd.data);
+  if(wantRemove){ payload.cover_url = null; } else if(cover_url_final){ payload.cover_url = cover_url_final; }
+  const { error } = await supabase.from('books').update(payload).eq('id', id);
+  if(error){ toast(error.message); return; }
   toast('ویرایش شد');
   closeModal('modalBook'); loadCatalog(); loadAdminBooks();
 });
+
 // === Member add/edit via modal ===
 function openAddMember(){
   document.getElementById('modalMemberTitle').textContent = 'افزودن عضو';
@@ -956,7 +915,6 @@ async function editLoan(id){
     <div class="bg-slate-800 rounded-2xl p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between mb-4">
         <h3 class="font-bold" id="modalBookTitle">ویرایش کتاب</h3>
-        <div id="mb_debug" class="text-xs opacity-70"></div>
         <button class="px-2 py-1 rounded-lg bg-slate-700" onclick="closeModal('modalBook')">✕</button>
       </div>
       <form id="formBookModal" class="grid md:grid-cols-3 gap-4">
@@ -1084,60 +1042,7 @@ window.editMember = async function(input){
   }catch(e){ console.error(e); toast('خطا در ویرایش عضو'); }
 };
 
-// ---------- Prevent refresh & persist forms ----------
-document.addEventListener('DOMContentLoaded', function(){
-  const fb = document.getElementById('formBookModal');
-  if(fb && !fb.dataset.bound){
-    fb.addEventListener('submit', async function(e){
-      e.preventDefault();
-      try{
-        const id = parseInt(document.getElementById('mb_id').value,10);
-        const payload = {
-          title: document.getElementById('mb_title').value.trim(),
-          author: document.getElementById('mb_author').value.trim() || null,
-          translator: document.getElementById('mb_translator').value.trim() || null,
-          subject: document.getElementById('mb_subject').value.trim() || null,
-          keywords: (document.getElementById('mb_keywords').value||'').split(';').map(s=>s.trim()).filter(Boolean),
-          publisher: document.getElementById('mb_publisher').value.trim() || null,
-          isbn: document.getElementById('mb_isbn').value.trim() || null,
-          published_year: parseInt(document.getElementById('mb_published_year').value,10) || null,
-          pages: parseInt(document.getElementById('mb_pages').value,10) || null,
-          total_copies: parseInt(document.getElementById('mb_total_copies').value,10) || 1,
-        };
-        const { error } = await supabase.from('books').update(payload).eq('id', id);
-        if(error) return toast(error.message);
-        toast('کتاب به‌روزرسانی شد'); closeModal('modalBook');
-        if(typeof loadCatalog==='function') loadCatalog();
-        if(typeof loadAdminBooks==='function') loadAdminBooks();
-      }catch(err){ console.error(err); toast('خطا در ذخیره کتاب'); }
-    });
-    fb.dataset.bound = '1';
-  }
-
-  const fm = document.getElementById('formMemberModal');
-  if(fm && !fm.dataset.bound){
-    fm.addEventListener('submit', async function(e){
-      e.preventDefault();
-      try{
-        const id = parseInt(document.getElementById('mm_id').value,10);
-        const payload = {
-          first_name: document.getElementById('mm_first_name').value.trim() || null,
-          last_name: document.getElementById('mm_last_name').value.trim() || null,
-          entry_year: parseInt(document.getElementById('mm_entry_year').value,10) || null,
-          degree: document.getElementById('mm_degree').value.trim() || null,
-          student_id: document.getElementById('mm_student_id').value.trim() || null,
-          phone: document.getElementById('mm_phone').value.trim() || null,
-          email: document.getElementById('mm_email').value.trim() || null,
-        };
-        const { error } = await supabase.from('members').update(payload).eq('id', id);
-        if(error) return toast(error.message);
-        toast('عضو به‌روزرسانی شد'); closeModal('modalMember');
-        if(typeof loadMembers==='function') loadMembers();
-      }catch(err){ console.error(err); toast('خطا در ذخیره عضو'); }
-    });
-    fm.dataset.bound = '1';
-  }
-});
+// removed conflicting duplicate binder block
 </script>
 
 <script>
@@ -1265,6 +1170,37 @@ function fmtJ(y,m,d){ return `${y}/${pad2(m)}/${pad2(d)}`; }
 // Helpers to normalize Persian/Arabic digits and validate Jalali input
 function toEnDigits(s){ if(!s) return s; return s.replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/-/g,'/'); }
 function normalizeJalali(s){ s=toEnDigits(String(s||'').trim()); const m=/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(s); if(!m) return ''; const y=+m[1], mo=+m[2], d=+m[3]; if(y<1200||y>1600||mo<1||mo>12) return ''; const md=(mo<=6)?31:((mo<=11)?30:29); if(d<1||d>md) return ''; return `${y}/${String(mo).padStart(2,'0')}/${String(d).padStart(2,'0')}`; }
+</script>
+<script>
+
+// ---- Cover link normalizer: turns common sharing links into direct image URLs ----
+function resolveCoverLink(s){
+  s = (s || '').trim();
+  if(!s) return '';
+  try{
+    var u = new URL(s);
+    // Google Drive: https://drive.google.com/file/d/<id>/view?usp=sharing
+    if(u.hostname.includes('drive.google.com')){
+      var m = u.pathname.match(/\/file\/d\/([^/]+)/);
+      if(m && m[1]){
+        return 'https://drive.google.com/uc?export=view&id=' + m[1];
+      }
+    }
+    // Dropbox: https://www.dropbox.com/s/<id>/file.jpg?dl=0 -> dl domain direct
+    if(u.hostname.endsWith('dropbox.com')){
+      var href = s.replace('www.dropbox.com', 'dl.dropboxusercontent.com');
+      href = href.replace('?dl=0','').replace('&dl=0','');
+      return href;
+    }
+    // GitHub raw: auto OK, otherwise keep as-is if http(s)
+    if(u.protocol === 'http:' || u.protocol === 'https:'){
+      return u.href;
+    }
+  }catch(e){
+    // ignore
+  }
+  return '';
+}
 </script>
 <script>
 // --- UTC-safe helpers to avoid DST / timezone drift ---
