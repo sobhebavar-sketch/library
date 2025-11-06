@@ -115,14 +115,14 @@
           <div>
             <label>تاریخ امانت (هجری شمسی)</label>
             <div class="date-input-wrap">
-              <input id="loan_borrowed" type="text" class="rounded-xl px-3 py-2 w-full" readonly />
+              <input id="loan_borrowed" type="text" data-jalali class="rounded-xl px-3 py-2 w-full" readonly />
               <button type="button" id="btn_open_borrowed" class="date-btn" style="width:32px;height:32px;display:inline-flex" aria-label="باز کردن تقویم"><i data-lucide="calendar" class="w-4 h-4"></i></button>
             </div>
           </div>
           <div>
             <label>تاریخ سررسید (هجری شمسی)</label>
             <div class="date-input-wrap">
-              <input id="loan_due" type="text" class="rounded-xl px-3 py-2 w-full" readonly />
+              <input id="loan_due" type="text" data-jalali class="rounded-xl px-3 py-2 w-full" readonly />
               <button type="button" id="btn_open_due" class="date-btn" style="width:32px;height:32px;display:inline-flex" aria-label="باز کردن تقویم"><i data-lucide="calendar" class="w-4 h-4"></i></button>
             </div>
           </div>
@@ -1152,7 +1152,7 @@ function normalizeJalali(s){ s=toEnDigits(String(s||'').trim()); const m=/^(\d{4
     <div class="text-lg font-bold">تمدید امانت</div>
     <div class="space-y-2">
       <label class="text-sm">تاریخ جدید سررسید (شمسی)</label>
-      <input id="extend_due" type="text" class="rounded-xl px-3 py-2 w-full bg-slate-700" placeholder="YYYY/MM/DD" />
+      <input id="extend_due" type="text" data-jalali class="rounded-xl px-3 py-2 w-full bg-slate-700" placeholder="YYYY/MM/DD" />
     </div>
     <div class="flex gap-2 justify-end">
       <button id="extend_cancel" class="px-3 py-2 rounded-xl bg-slate-600">انصراف</button>
@@ -1178,7 +1178,7 @@ function normalizeJalali(s){ s=toEnDigits(String(s||'').trim()); const m=/^(\d{4
       </div>
       <div class="space-y-2">
         <label class="text-sm">تاریخ سررسید (شمسی)</label>
-        <input id="edit_due" type="text" class="rounded-xl px-3 py-2 w-full bg-slate-700" placeholder="YYYY/MM/DD" />
+        <input id="edit_due" type="text" data-jalali class="rounded-xl px-3 py-2 w-full bg-slate-700" placeholder="YYYY/MM/DD" />
       </div>
     </div>
     <div class="flex gap-2 justify-end pt-2">
@@ -1215,6 +1215,50 @@ const now = new Date();
     // trailing setDate block removed
   }catch(e){}
 }
+</script>
+
+
+<script>
+// Minimal Jalali Datepicker (vanilla, no external libs)
+(function(){
+  function daysInJMonth(y,m){ return (m<=6)?31:((m<=11)?30:(g2j(j2g(y,12,30)[0], j2g(y,12,30)[1], j2g(y,12,30)[2])[2]===30?30:29)); }
+  function el(tag, cls, html){ const e=document.createElement(tag); if(cls) e.className=cls; if(html!=null) e.innerHTML=html; return e; }
+  function pickFor(input){
+    let val = normalizeJalali(input.value||''); 
+    let jy, jm, jd;
+    if(val){ const ps=val.split('/').map(x=>parseInt(x,10)); jy=ps[0]; jm=ps[1]; jd=ps[2]; }
+    else { const d=new Date(); const j=g2j(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate()); jy=j[0]; jm=j[1]; jd=j[2]; }
+    const box = el('div','z-50 fixed inset-0 bg-black/30'); const wrap = el('div','fixed inset-0 flex items-center justify-center');
+    const card = el('div','bg-slate-800 text-white rounded-2xl p-4 w-[320px]');
+    const head = el('div','flex items-center justify-between mb-2');
+    const btnL = el('button','px-2','‹'); const btnR = el('button','px-2','›'); const title = el('div','font-bold', jy+' / '+String(jm).padStart(2,'0'));
+    head.append(btnL,title,btnR); card.append(head);
+    const grid = el('div','grid grid-cols-7 gap-1');
+    function render(){
+      title.textContent = jy+' / '+String(jm).padStart(2,'0');
+      grid.innerHTML='';
+      const n = daysInJMonth(jy,jm);
+      for(let d=1; d<=n; d++){
+        const b=el('button','py-1 rounded hover:bg-slate-700', String(d).padStart(2,'0'));
+        if(d===jd) b.classList.add('bg-slate-700');
+        b.onclick = ()=>{ jd=d; input.value = fmtJ(jy,jm,jd); document.body.removeChild(box); };
+        grid.append(b);
+      }
+    }
+    btnL.onclick = ()=>{ jm--; if(jm<1){ jm=12; jy--; } render(); };
+    btnR.onclick = ()=>{ jm++; if(jm>12){ jm=1; jy++; } render(); };
+    card.append(grid);
+    const foot = el('div','mt-3 flex justify-end gap-2');
+    const cancel = el('button','px-3 py-1 bg-slate-600 rounded','انصراف');
+    cancel.onclick = ()=> document.body.removeChild(box);
+    foot.append(cancel); card.append(foot);
+    wrap.append(card); box.append(wrap); document.body.append(box); render();
+  }
+  document.addEventListener('click', (e)=>{
+    const t = e.target;
+    if(t && t.matches('input[data-jalali]')){ e.preventDefault(); pickFor(t); }
+  });
+})();
 </script>
 
 </body>
