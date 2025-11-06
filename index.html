@@ -807,7 +807,7 @@ async function editLoan(id){
 
   // helper to set jalali to inputs
   const setJalali = (el, d)=>{
-    const j = g2j(d.getFullYear(), d.getMonth()+1, d.getDate());
+    const j = g2j(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate());
     el.value = fmtJ(j[0], j[1], j[2]);
   };
 
@@ -853,9 +853,11 @@ async function editLoan(id){
 
   const onSave = async ()=>{
     // Parse Jalali inputs
-    const bp = (inpBorrowed.value||'').replaceAll('-', '/').split('/').map(Number);
-    const dp = (inpDue.value||'').replaceAll('-', '/').split('/').map(Number);
-    if(bp.length<3 || dp.length<3 || bp.some(isNaN) || dp.some(isNaN)){ toast('تاریخ نامعتبر'); return; }
+    const bStr = normalizeJalali((inpBorrowed.value||'').replaceAll('-', '/'));
+    const dStr = normalizeJalali((inpDue.value||'').replaceAll('-', '/'));
+    if(!bStr || !dStr){ toast('تاریخ نامعتبر'); return; }
+    const bp = bStr.split('/').map(Number);
+    const dp = dStr.split('/').map(Number);
     const bg = j2g(bp[0], bp[1], bp[2]);
     const dg = j2g(dp[0], dp[1], dp[2]);
     const payload = {
@@ -1220,7 +1222,7 @@ function jalaliFromISO(iso){
       </div>
       <div class="space-y-2">
         <label class="text-sm">تاریخ ثبت امانت (شمسی)</label>
-        <input id="edit_borrowed" type="text" class="rounded-xl px-3 py-2 w-full bg-slate-700" placeholder="YYYY/MM/DD" />
+        <input id="edit_borrowed" type="text" data-jalali class="rounded-xl px-3 py-2 w-full bg-slate-700" placeholder="YYYY/MM/DD" readonly />
       </div>
       <div class="space-y-2">
         <label class="text-sm">تاریخ سررسید (شمسی)</label>
