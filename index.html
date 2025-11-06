@@ -192,22 +192,13 @@ const fmtDate = (s)=>{
   try{
     if(!s) return '—';
     const d = new Date(s);
-    if (isNaN(d.getTime())) return '—';
-    const j = g2j(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate());
+    const j = g2j(d.getFullYear(), d.getMonth()+1, d.getDate());
     return fmtJ(j[0], j[1], j[2]);
   }catch(e){
     try{ return new Date(s).toLocaleDateString('fa-IR'); }catch(_){ return s||'—'; }
   }
 };
 const toast = (msg)=>{ const el=document.createElement('div'); el.className='fixed bottom-4 right-4 bg-black/80 text-white px-3 py-2 rounded-xl text-sm'; el.textContent=msg; document.body.appendChild(el); setTimeout(()=>el.remove(),3000); };
-// DOM ready polyfill (prevents 'ready is not defined')
-if (typeof ready === 'undefined') {
-  var ready = function(fn){
-    if (document.readyState !== 'loading') { fn(); }
-    else { document.addEventListener('DOMContentLoaded', fn); }
-  };
-}
-
 
 function toCSV(rows){
   if(!rows || !rows.length) return '';
@@ -431,28 +422,31 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
   // Borrowed date (Jalali) -> Gregorian ISO
   let borrowed_at_iso;
   const bStr = $('#loan_borrowed').value?.trim();
-  const bp = parseJalaliInput(bStr);
-  if (bp) {
-    borrowed_at_iso = jalaliToIso(bp[0], bp[1], bp[2]);
+  if (bStr) {
+    try {
+      const parts = bStr.replaceAll('-', '/').split('/').map(x=>parseInt(x,10));
+      const pb = j2g(parts[0], parts[1], parts[2]);
+      const gb = new Date(pb[0], pb[1]-1, pb[2], 12, 0, 0);
+      borrowed_at_iso = gb.toISOString();
+    } catch(e){}
   }
   if(!borrowed_at_iso){ borrowed_at_iso = new Date().toISOString(); }
 
   // Due date (Jalali) -> Gregorian ISO
   let due_at_iso;
   const dueStr = $('#loan_due').value?.trim();
-  const dp = parseJalaliInput(dueStr);
-  if (dp) {
-    due_at_iso = jalaliToIso(dp[0], dp[1], dp[2]);
+  if (dueStr) {
+    try {
+      const parts = dueStr.replaceAll('-', '/').split('/').map(x=>parseInt(x,10));
+      const pd = j2g(parts[0], parts[1], parts[2]);
+      const g = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0);
+      due_at_iso = g.toISOString();
+    } catch(e){}
   }
   if(!due_at_iso){
     const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
     const days = st?.default_loan_days || 14;
-    {
-      const now = new Date();
-      const base = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0));
-      base.setUTCDate(base.getUTCDate() + days);
-      due_at_iso = base.toISOString();
-    }
+    due_at_iso = new Date(Date.now() + days*24*3600*1000).toISOString();
   }
 
   // Try RPC with borrowed_at support first; fallback if arg not accepted
@@ -598,10 +592,11 @@ async function extendLoan(id){
   modal.classList.remove('hidden'); modal.classList.add('flex');
 
   const handlerOk = async ()=>{
-    const parts = parseJalaliInput(inp.value||'');
-    if(!parts){ toast('تاریخ نامعتبر'); return; }
-    const due_at_iso = jalaliToIso(parts[0], parts[1], parts[2]);
-    const payload = { due_at: due_at_iso, renewals_count: (l.renewals_count||0) + 1 };
+    const parts = (inp.value||'').replaceAll('-', '/').split('/').map(s=>parseInt(s,10));
+    if(parts.length<3 || parts.some(isNaN)){ toast('تاریخ نامعتبر'); return; }
+    const g = j2g(parts[0], parts[1], parts[2]);
+    const due_at = new Date(g[0], g[1]-1, g[2], 12, 0, 0);
+    const payload = { due_at: due_at.toISOString(), renewals_count: (l.renewals_count||0) + 1 };
     const { error: e2 } = await supabase.from('loans').update(payload).eq('id', id);
     if(e2){ toast(e2.message); return; }
     toast('تمدید شد');
@@ -865,13 +860,15 @@ async function editLoan(id){
   };
 
   const onSave = async ()=>{
-    // Parse Jalali inputs robustly (supports Persian digits)
-    const bp = parseJalaliInput(inpBorrowed.value||'');
-    const dp = parseJalaliInput(inpDue.value||'');
-    if(!bp || !dp){ toast('تاریخ نامعتبر'); return; }
+    // Parse Jalali inputs
+    const bp = (inpBorrowed.value||'').replaceAll('-', '/').split('/').map(Number);
+    const dp = (inpDue.value||'').replaceAll('-', '/').split('/').map(Number);
+    if(bp.length<3 || dp.length<3 || bp.some(isNaN) || dp.some(isNaN)){ toast('تاریخ نامعتبر'); return; }
+    const bg = j2g(bp[0], bp[1], bp[2]);
+    const dg = j2g(dp[0], dp[1], dp[2]);
     const payload = {
-      borrowed_at: jalaliToIso(bp[0], bp[1], bp[2]),
-      due_at: jalaliToIso(dp[0], dp[1], dp[2])
+      borrowed_at: new Date(bg[0], bg[1]-1, bg[2], 12, 0, 0).toISOString(),
+      due_at: new Date(dg[0], dg[1]-1, dg[2], 12, 0, 0).toISOString()
     };
     const sel = res.dataset.sel ? parseInt(res.dataset.sel,10) : null;
     if(sel && sel !== l.member_id) payload.member_id = sel;
@@ -1209,40 +1206,6 @@ function g2j(gy, gm, gd){
 }
 function pad2(n){ return String(n).padStart(2,'0'); }
 function fmtJ(y,m,d){ return `${y}/${pad2(m)}/${pad2(d)}`; }
-// ---- Normalizers & safe conversions ----
-function toEnDigits(str){
-  if(!str) return '';
-  const fa = '۰۱۲۳۴۵۶۷۸۹';
-  const ar = '٠١٢٣٤٥٦٧٨٩';
-  let out = '';
-  for (const ch of String(str)){
-    const i1 = fa.indexOf(ch);
-    if(i1 >= 0){ out += String(i1); continue; }
-    const i2 = ar.indexOf(ch);
-    if(i2 >= 0){ out += String(i2); continue; }
-    out += ch;
-  }
-  return out;
-}
-function parseJalaliInput(s){
-  const t = toEnDigits((s||'').trim()).replace(/-/g,'/').replace(/\./g,'/');
-  const m = t.match(/^(\d{3,4})\/(\d{1,2})\/(\d{1,2})$/);
-  if(!m) return null;
-  const y = parseInt(m[1],10), mo = parseInt(m[2],10), d = parseInt(m[3],10);
-  if(!y || !mo || !d) return null;
-  return [y, mo, d];
-}
-function jalaliToIso(y,m,d){
-  const g = j2g(y,m,d);
-  return new Date(Date.UTC(g[0], g[1]-1, g[2], 12, 0, 0)).toISOString();
-}
-function isoToJalali(iso){
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '—';
-  const j = g2j(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate());
-  return fmtJ(j[0], j[1], j[2]);
-}
-
 </script>
 
 
@@ -1325,10 +1288,7 @@ async function setDefaultLoanDates(){
     if(dEl) dEl.value = fmtJ(dj[0], dj[1], dj[2]);
 
     // If flatpickr is bound, setDate using Gregorian Date objects
-    try{
-      if (bEl._flatpickr && window.flatpickr){ bEl._flatpickr.setDate(now, true); }
-      if (dEl._flatpickr && window.flatpickr){ dEl._flatpickr.setDate(due, true); }
-    }catch(_){}
+    // setDate calls removed to prevent Jalali/Gregorian drift
   }catch(e){}
 }
 </script>
