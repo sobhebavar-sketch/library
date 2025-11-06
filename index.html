@@ -78,8 +78,12 @@
           </div>
           <div>
             <label>عکس جلد</label>
-            <input id="bk_cover" type="file" accept="image/*" class="block w-full text-sm" />
-            <img id="coverPreview" class="mt-3 rounded-xl max-h-48 hidden" />
+            <div class="space-y-2">
+              <input id="bk_cover" type="file" accept="image/*" class="block w-full text-sm" />
+              <input id="bk_cover_url" type="url" placeholder="یا لینک مستقیم تصویر (https://...)" class="rounded-xl px-3 py-2 w-full" />
+              <img id="coverPreview" class="mt-3 rounded-xl max-h-48 hidden" />
+              <p class="text-xs opacity-70">اگر فایل انتخاب شود، نسبت به لینک اولویت دارد.</p>
+            </div>
           </div>
           <div class="md:col-span-3">
             <button class="px-4 py-2 rounded-xl bg-emerald-600">ذخیره</button>
@@ -337,11 +341,14 @@ $('#bookForm')?.addEventListener('submit', async (e)=>{
 
   let cover_url = null;
   const file = coverInput?.files?.[0];
+  const linkVal = ($('#bk_cover_url')?.value||'').trim();
   if(file){
     const safeName = ('c'+Date.now()+'-'+file.name).replace(/[^a-zA-Z0-9\.\-_]/g,'_');
     const up = await supabase.storage.from('book_covers').upload(safeName, file, { contentType: file.type, upsert: true });
     if(up.error) return toast(up.error.message);
     const pub = supabase.storage.from('book_covers').getPublicUrl(up.data.path); cover_url = pub.data.publicUrl;
+  } else if(/^https?:\/\//i.test(linkVal)) {
+    cover_url = linkVal;
   }
   const payload = {
     title,
@@ -361,7 +368,7 @@ $('#bookForm')?.addEventListener('submit', async (e)=>{
   if(error) return toast(error.message);
   toast('کتاب ذخیره شد');
   ['#bk_title','#bk_author','#bk_translator','#bk_pages','#bk_published_year','#bk_subject','#bk_keywords','#bk_publisher','#bk_isbn'].forEach(s=> $(s).value='');
-  $('#bk_total').value = 1; $('#bk_cover').value=''; $('#coverPreview').classList.add('hidden');
+  $('#bk_total').value = 1; $('#bk_cover').value=''; $('#bk_cover_url').value=''; $('#coverPreview').classList.add('hidden');
   loadCatalog(); loadAdminBooks();
 });
 async function loadAdminBooks(){
@@ -724,7 +731,11 @@ function closeModal(id){ const el=document.getElementById(id); if(!el) return; e
 // === Datepicker init ===
 // Init loan due picker on page
 document.addEventListener('DOMContentLoaded', ()=>{
-  
+  const up = document.getElementById('mb_cover');
+  up?.addEventListener('change', (e)=>{
+    const f = e.target.files?.[0]; const img=document.getElementById('mb_cover_preview');
+    if(f){ img.src = URL.createObjectURL(f); img.classList.remove('hidden'); }
+  });
 });
 
 // === Book edit via modal ===
@@ -734,6 +745,17 @@ async function editBook(b){ /* replaced by modal version */ return window.editBo
 document.getElementById('formBookModal')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const id = parseInt(document.getElementById('mb_id').value, 10);
+  let cover_url_final = null;
+  const f = document.getElementById('mb_cover')?.files?.[0];
+  const link = (document.getElementById('mb_cover_url')?.value||'').trim();
+  if(f){
+    const safeName = ('c'+Date.now()+'-'+f.name).replace(/[^a-zA-Z0-9\.\-_]/g,'_');
+    const up = await supabase.storage.from('book_covers').upload(safeName, f, { contentType: f.type, upsert: true });
+    if(up.error){ toast(up.error.message); return; }
+    const pub = supabase.storage.from('book_covers').getPublicUrl(up.data.path); cover_url_final = pub.data.publicUrl;
+  } else if(/^https?:\/\//i.test(link)) {
+    cover_url_final = link;
+  }
   const payload = {
     title: document.getElementById('mb_title').value.trim(),
     author: document.getElementById('mb_author').value.trim() || null,
@@ -746,6 +768,7 @@ document.getElementById('formBookModal')?.addEventListener('submit', async (e)=>
     isbn: document.getElementById('mb_isbn').value.trim() || null,
     total_copies: parseInt(document.getElementById('mb_total_copies').value,10) || 1
   };
+  if(cover_url_final){ payload.cover_url = cover_url_final; }
   const { error } = await supabase.from('books').update(payload).eq('id', id);
   if(error){ toast(error.message); return; }
   toast('ویرایش شد');
@@ -899,6 +922,14 @@ async function editLoan(id){
         <div class="md:col-span-2"><label>انتشارات</label><input id="mb_publisher" class="rounded-xl px-3 py-2 w-full" /></div>
         <div><label>کد/ISBN</label><input id="mb_isbn" class="rounded-xl px-3 py-2 w-full" /></div>
         <div><label>تعداد نسخه</label><input id="mb_total_copies" type="number" min="1" class="rounded-xl px-3 py-2 w-full" /></div>
+        <div class="md:col-span-3"><label>عکس جلد</label>
+          <div class="space-y-2">
+            <input id="mb_cover" type="file" accept="image/*" class="block w-full text-sm" />
+            <input id="mb_cover_url" type="url" placeholder="یا لینک مستقیم تصویر (https://...)" class="rounded-xl px-3 py-2 w-full" />
+            <img id="mb_cover_preview" class="mt-3 rounded-xl max-h-48 hidden" />
+            <p class="text-xs opacity-70">اگر فایل انتخاب شود، نسبت به لینک اولویت دارد. برای عدم تغییر، هیچ‌کدام را پر نکنید.</p>
+          </div>
+        </div>
         <div class="md:col-span-3 mt-2">
           <button class="px-4 py-2 rounded-xl bg-emerald-600" type="submit">ذخیره</button>
         </div>
@@ -970,6 +1001,8 @@ window.editBook = async function(input){
     document.getElementById('mb_published_year').value = b.published_year || '';
     document.getElementById('mb_pages').value = b.pages || '';
     document.getElementById('mb_total_copies').value = b.total_copies || 1;
+    document.getElementById('mb_cover_url').value = b.cover_url || '';
+    if(b.cover_url){ const img=document.getElementById('mb_cover_preview'); img.src=b.cover_url; img.classList.remove('hidden'); } else { document.getElementById('mb_cover_preview').classList.add('hidden'); }
     openModal('modalBook');
   }catch(e){ console.error(e); toast('خطا در ویرایش کتاب'); }
 };
