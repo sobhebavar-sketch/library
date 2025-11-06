@@ -1110,21 +1110,48 @@ function jalCal(jy){
   if(leap===-1) leap = 4;
   return { leap: leap===0, gy: gy, march: march };
 }
+
 function j2g(jy, jm, jd){
-  jy = parseInt(jy,10); jm = parseInt(jm,10); jd = parseInt(jd,10);
-  var r = jalCal(jy), gy = r.gy, march = r.march, gdayno, jdayno;
-  jdayno = 365*(jy-1) + div((jy-1),33)*8 + div(mod((jy-1),33)+3,4);
-  for (var i=1;i<jm;i++) jdayno += (i<=6)?31:((i<=11)?30:29);
-  jdayno += jd;
-  gdayno = jdayno + (gy-1600)*365 + div((gy-1600+3),4) - div((gy-1600+99),100) + div((gy-1600+399),400) - 79;
-  var gy2 = 1600 + 400*div(gdayno,146097); gdayno = mod(gdayno,146097);
-  var leap = true; if (gdayno >= 36525){ gdayno--; gy2 += 100*div(gdayno,36524); gdayno = mod(gdayno,36524); leap = gdayno >= 365; if(leap) gdayno--; }
-  gy2 += 4*div(gdayno,1461); gdayno = mod(gdayno,1461);
-  if (gdayno >= 366){ leap = false; gdayno -= 366; gy2 += div(gdayno,365); gdayno = mod(gdayno,365); }
-  var gd, gm; var gMonth = [31, (leap?29:28),31,30,31,30,31,31,30,31,30,31];
-  for (gm=0; gm<12 && gdayno >= gMonth[gm]; gm++) gdayno -= gMonth[gm];
-  gd = gdayno + 1;
-  return [gy2, gm+1, gd];
+  jy = parseInt(jy,10) - 979;
+  jm = parseInt(jm,10) - 1;
+  jd = parseInt(jd,10) - 1;
+
+  var j_day_no = 365*jy + div(jy,33)*8 + div(mod(jy,33)+3,4);
+  for (var i=0; i<jm; ++i) j_day_no += (i<6 ? 31 : 30);
+  j_day_no += jd;
+
+  var g_day_no = j_day_no + 79;
+
+  var gy = 1600 + 400*div(g_day_no,146097);
+  g_day_no = mod(g_day_no,146097);
+
+  var leap = true;
+  if (g_day_no >= 36525){
+    g_day_no--;
+    gy += 100*div(g_day_no,36524);
+    g_day_no = mod(g_day_no,36524);
+    if (g_day_no >= 365){
+      g_day_no++;
+    } else {
+      leap = false;
+    }
+  }
+
+  gy += 4*div(g_day_no,1461);
+  g_day_no = mod(g_day_no,1461);
+
+  if (g_day_no >= 366){
+    leap = false;
+    g_day_no--;
+    gy += div(g_day_no,365);
+    g_day_no = mod(g_day_no,365);
+  }
+
+  var gd = g_day_no + 1;
+  var sal_a = [0,31,(leap?29:28),31,30,31,30,31,31,30,31,30,31];
+  var gm = 0;
+  for (; gm<13 && gd > sal_a[gm]; gm++) gd -= sal_a[gm];
+  return [gy, gm, gd];
 }
 function g2j(gy, gm, gd){
   gy = parseInt(gy,10); gm = parseInt(gm,10); gd = parseInt(gd,10);
