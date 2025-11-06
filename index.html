@@ -190,7 +190,7 @@ const fmtDate = (s)=>{
   try{
     if(!s) return '—';
     const d = new Date(s);
-    const j = g2j(d.getFullYear(), d.getMonth()+1, d.getDate());
+    const j = g2j(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate());
     return fmtJ(j[0], j[1], j[2]);
   }catch(e){
     try{ return new Date(s).toLocaleDateString('fa-IR'); }catch(_){ return s||'—'; }
@@ -417,12 +417,12 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
 
   // Borrowed date (Jalali) -> Gregorian ISO
   let borrowed_at_iso;
-  const bStr = $('#loan_borrowed').value?.trim();
+  let bStr = normalizeJalali($('#loan_borrowed').value?.trim());
   if (bStr) {
     try {
-      const parts = bStr.replaceAll('-', '/').split('/').map(x=>parseInt(x,10));
+      const parts = bStr.split('/').map(x=>parseInt(x,10));
       const pb = j2g(parts[0], parts[1], parts[2]);
-      const gb = new Date(pb[0], pb[1]-1, pb[2], 12, 0, 0);
+      const gb = new Date(Date.UTC(pb[0], pb[1]-1, pb[2], 12, 0, 0));
       borrowed_at_iso = gb.toISOString();
     } catch(e){}
   }
@@ -430,12 +430,12 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
 
   // Due date (Jalali) -> Gregorian ISO
   let due_at_iso;
-  const dueStr = $('#loan_due').value?.trim();
+  let dueStr = normalizeJalali($('#loan_due').value?.trim());
   if (dueStr) {
     try {
-      const parts = dueStr.replaceAll('-', '/').split('/').map(x=>parseInt(x,10));
+      const parts = dueStr.split('/').map(x=>parseInt(x,10));
       const pd = j2g(parts[0], parts[1], parts[2]);
-      const g = new Date(pd[0], pd[1]-1, pd[2], 12, 0, 0);
+      const g = new Date(Date.UTC(pd[0], pd[1]-1, pd[2], 12, 0, 0));
       due_at_iso = g.toISOString();
     } catch(e){}
   }
@@ -1113,6 +1113,26 @@ function g2j(gy, gm, gd){
 }
 function pad2(n){ return String(n).padStart(2,'0'); }
 function fmtJ(y,m,d){ return `${y}/${pad2(m)}/${pad2(d)}`; }
+
+// --- Jalali Input Helpers ---
+function toEnDigits(s){
+  if(!s) return s;
+  return s.replace(/[۰-۹]/g, d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+          .replace(/[٠-٩]/g, d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+          .replace(/-/g,'/');
+}
+function normalizeJalali(s){
+  s = toEnDigits(String(s||'').trim());
+  const m = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(s);
+  if(!m) return '';
+  const y = parseInt(m[1],10), mo=parseInt(m[2],10), d=parseInt(m[3],10);
+  if(!(y>1200 && y<1600)) return '';
+  if(!(mo>=1 && mo<=12)) return '';
+  const md = (mo<=6)?31:((mo<=11)?30:29);
+  if(!(d>=1 && d<=md)) return '';
+  return `${y}/${String(mo).padStart(2,'0')}/${String(d).padStart(2,'0')}`;
+}
+
 </script>
 
 <div id="extend-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
