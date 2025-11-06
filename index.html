@@ -18,8 +18,6 @@
     label { font-size: 12px; color: rgba(226,232,240,.8); }
   </style>
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/flatpickr.min.css">
-
 </head>
 <body class="text-slate-100">
   <div id="app" class="max-w-7xl mx-auto p-4 sm:p-6">
@@ -321,7 +319,6 @@ async function loadCatalog(q=''){
   }).join('');
 }
 
-
 const coverInput = $('#bk_cover');
 coverInput?.addEventListener('change', (e)=>{
   const f = e.target.files?.[0]; if(!f) return;
@@ -411,7 +408,6 @@ async function deleteMember(id){
   const { error } = await supabase.from('members').delete().eq('id', id);
   if(error) return toast(error.message); toast('حذف شد'); loadMembers();
 }
-
 
 $('#loanForm')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
@@ -506,7 +502,6 @@ $('#loan_book_query')?.addEventListener('input', async (e)=>{
   $$('#loan_book_results button').forEach(b=> b.onclick = ()=>{ $('#loan_book_results').dataset.sel=b.dataset.id; toast('کتاب انتخاب شد'); });
 });
 
-
 async function loadLoans(){
   const { data, error } = await supabase
     .from('loans')
@@ -554,8 +549,6 @@ async function loadLoans(){
     </div>`).join('');
 }
 
-
-
 async function extendLoan(id){
   // Load loan & defaults
   const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
@@ -576,19 +569,7 @@ async function extendLoan(id){
     const j = g2j(newDue.getFullYear(), newDue.getMonth()+1, newDue.getDate());
     inp.value = fmtJ(j[0], j[1], j[2]);
   }catch(_){ inp.value = ''; }
-
-  // Initialize datepicker same as loan_due
-  try{
-    const loanDue = document.getElementById('loan_due');
-    if (loanDue && loanDue._flatpickr && window.flatpickr) {
-      const cfg = Object.assign({}, loanDue._flatpickr.config);
-      if (inp._flatpickr) inp._flatpickr.destroy();
-      window.flatpickr(inp, cfg);
-      // setDate removed (prevents drift)
-    }
-  }catch(_){}
-
-  // Show modal
+// Show modal
   modal.classList.remove('hidden'); modal.classList.add('flex');
 
   const handlerOk = async ()=>{
@@ -710,7 +691,6 @@ function openModal(id){ const el=document.getElementById(id); if(!el) return; el
 function closeModal(id){ const el=document.getElementById(id); if(!el) return; el.classList.add('hidden'); el.classList.remove('flex'); }
 
 // === Datepicker init ===
-  // persianDatepicker (external) removed; using flatpickr config clone instead.
 // Init loan due picker on page
 document.addEventListener('DOMContentLoaded', ()=>{
   initJalaliPicker('#loan_due');
@@ -819,26 +799,7 @@ async function editLoan(id){
     res.appendChild(chip);
     res.dataset.sel = String(l.member_id);
   } else { res.dataset.sel = ''; }
-
-  // Init datepickers same as loan_form
-  try{
-    const loanBorrowed = document.getElementById('loan_borrowed');
-    if (loanBorrowed && loanBorrowed._flatpickr && window.flatpickr) {
-      const cfg = Object.assign({}, loanBorrowed._flatpickr.config);
-      if (inpBorrowed._flatpickr) inpBorrowed._flatpickr.destroy();
-      window.flatpickr(inpBorrowed, cfg);
-      // setDate removed to avoid drift
-    }
-    const loanDue = document.getElementById('loan_due');
-    if (loanDue && loanDue._flatpickr && window.flatpickr) {
-      const cfg2 = Object.assign({}, loanDue._flatpickr.config);
-      if (inpDue._flatpickr) inpDue._flatpickr.destroy();
-      window.flatpickr(inpDue, cfg2);
-      // setDate removed to avoid drift
-    }
-  }catch(_){}
-
-  // Member search
+// Member search
   q.oninput = async (e)=>{
     const s = e.target.value.trim();
     if(!s){ res.innerHTML=''; res.dataset.sel=''; return; }
@@ -882,7 +843,6 @@ async function editLoan(id){
   btnSave.addEventListener('click', onSave);
   btnCancel.addEventListener('click', onCancel);
 }
-
 
 </script>
 
@@ -955,48 +915,7 @@ async function editLoan(id){
     </div>
   </div>
 
-
 <script>
-// ---------- Robust Persian datepicker binding ----------
-(function(){
-  function ready(){ return document.readyState==='interactive' || document.readyState==='complete'; }
-  function bindOnce(selector){
-    if(!ready()) return false;
-    try{
-      jQuery(selector).each(function(){
-        if(this.dataset.pdBound==='1') return;
-        this.dataset.pdBound='1';
-      });
-      return true;
-    }catch(e){ console.error('persian bind', e); }
-    return false;
-  }
-  function retryBind(selector, tries=20, delay=150){
-    let n=0; (function tick(){ if(bindOnce(selector) || n++>=tries) return; setTimeout(tick, delay); })();
-  }
-  document.addEventListener('DOMContentLoaded', function(){
-    retryBind('#loan_due');
-    const el = document.getElementById('loan_due');
-    if(el) el.addEventListener('focus', ()=>bindOnce('#loan_due'));
-    document.querySelectorAll('[data-tab="admin-loans"]').forEach(btn=>{
-      btn.addEventListener('click', ()=> setTimeout(()=>retryBind('#loan_due'), 50));
-    });
-  });
-  const mo = new MutationObserver(()=>{
-    bindOnce('input[id^="ml_borrowed"]');
-    bindOnce('input[id^="ml_due"]');
-  });
-  document.addEventListener('DOMContentLoaded', ()=> mo.observe(document.body, {childList:true, subtree:true}));
-  const _origOpen = window.openLoanModal;
-  window.openLoanModal = function(l, opts){
-    if(typeof _origOpen === 'function'){ _origOpen(l, opts); }
-    setTimeout(()=>{
-      bindOnce('input[id^="ml_borrowed"]');
-      bindOnce('input[id^="ml_due"]');
-    }, 0);
-  };
-})();
-
 // ---------- Edit book & member implementations ----------
 window.editBook = async function(input){
   try{
@@ -1099,30 +1018,19 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 </script>
 
-
-
-
-<script src="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/flatpickr.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/l10n/jalaliDate.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/l10n/fa.js"></script>
 <script>
-// Flatpickr + Jalali init for borrowed/due fields + calendar buttons
 document.addEventListener('DOMContentLoaded', function(){
   function bind(){
-    if(!window.flatpickr) return;
     var base = {
       disableMobile: false,
       dateFormat: "Y/m/d",
       // use Persian locale if available
-      locale: (flatpickr.l10ns && flatpickr.l10ns.fa) ? flatpickr.l10ns.fa : undefined
     };
     var borrowed = document.querySelector('#loan_borrowed');
     var due = document.querySelector('#loan_due');
     if(borrowed && !borrowed._fp){
-      borrowed._fp = flatpickr(borrowed, Object.assign({}, base, { }));
     }
     if(due && !due._fp){
-      due._fp = flatpickr(due, Object.assign({}, base, { }));
     }
     // Buttons
     [['btn_open_borrowed', borrowed], ['btn_open_due', due]].forEach(function([btnId, input]){
@@ -1148,8 +1056,6 @@ document.addEventListener('DOMContentLoaded', function(){
 
 </script>
 </script>
-
-
 
 <script>
 // ---- Jalali (Jalaali) <-> Gregorian conversion helpers (no external deps) ----
@@ -1209,7 +1115,6 @@ function pad2(n){ return String(n).padStart(2,'0'); }
 function fmtJ(y,m,d){ return `${y}/${pad2(m)}/${pad2(d)}`; }
 </script>
 
-
 <div id="extend-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
   <div class="bg-slate-800 text-white rounded-2xl p-4 w-[90%] max-w-md space-y-3">
     <div class="text-lg font-bold">تمدید امانت</div>
@@ -1223,8 +1128,6 @@ function fmtJ(y,m,d){ return `${y}/${pad2(m)}/${pad2(d)}`; }
     </div>
   </div>
 </div>
-
-
 
 <!-- Edit Loan Modal -->
 <div id="edit-loan-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
@@ -1253,22 +1156,8 @@ function fmtJ(y,m,d){ return `${y}/${pad2(m)}/${pad2(d)}`; }
   </div>
 </div>
 
-
 <script>
-function initJalaliPicker(selector){
-  try{
-    const loanDue = document.getElementById('loan_due');
-    if (loanDue && loanDue._flatpickr && window.flatpickr){
-      const cfg = Object.assign({}, loanDue._flatpickr.config);
-      document.querySelectorAll(selector).forEach(el=>{
-        if(el._flatpickr) el._flatpickr.destroy();
-        window.flatpickr(el, cfg);
-      });
-    }
-  }catch(_){}
-}
 </script>
-
 
 <script>
 async function setDefaultLoanDates(){
@@ -1288,7 +1177,6 @@ async function setDefaultLoanDates(){
     if(bEl) bEl.value = fmtJ(bj[0], bj[1], bj[2]);
     if(dEl) dEl.value = fmtJ(dj[0], dj[1], dj[2]);
 
-    // If flatpickr is bound, setDate using Gregorian Date objects
     // trailing setDate block removed
   }catch(e){}
 }
