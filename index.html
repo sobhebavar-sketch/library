@@ -1064,33 +1064,8 @@ window.editMember = async function(input){
 
 // ---------- Prevent refresh & persist forms ----------
 document.addEventListener('DOMContentLoaded', function(){
-  const fb = document.getElementById('formBookModal');
-  if(fb && !fb.dataset.bound){
-    fb.addEventListener('submit', async function(e){
-      e.preventDefault();
-      try{
-        const id = parseInt(document.getElementById('mb_id').value,10);
-        const payload = {
-          title: document.getElementById('mb_title').value.trim(),
-          author: document.getElementById('mb_author').value.trim() || null,
-          translator: document.getElementById('mb_translator').value.trim() || null,
-          subject: document.getElementById('mb_subject').value.trim() || null,
-          keywords: (document.getElementById('mb_keywords').value||'').split(';').map(s=>s.trim()).filter(Boolean),
-          publisher: document.getElementById('mb_publisher').value.trim() || null,
-          isbn: document.getElementById('mb_isbn').value.trim() || null,
-          published_year: parseInt(document.getElementById('mb_published_year').value,10) || null,
-          pages: parseInt(document.getElementById('mb_pages').value,10) || null,
-          total_copies: parseInt(document.getElementById('mb_total_copies').value,10) || 1,
-        };
-        const { error } = await supabase.from('books').update(payload).eq('id', id);
-        if(error) return toast(error.message);
-        toast('کتاب به‌روزرسانی شد'); closeModal('modalBook');
-        if(typeof loadCatalog==='function') loadCatalog();
-        if(typeof loadAdminBooks==='function') loadAdminBooks();
-      }catch(err){ console.error(err); toast('خطا در ذخیره کتاب'); }
-    });
-    fb.dataset.bound = '1';
-  }
+  // removed duplicate fb submit handler (no cover handling)
+
 
   const fm = document.getElementById('formMemberModal');
   if(fm && !fm.dataset.bound){
