@@ -803,12 +803,15 @@ document.getElementById('formBookModal')?.addEventListener('submit', async (e)=>
     isbn: document.getElementById('mb_isbn').value.trim() || null,
     total_copies: parseInt(document.getElementById('mb_total_copies').value,10) || 1
   };
+  if(cover_action === 'none'){ toast('هیچ تغییری برای جلد انتخاب نشد'); }
   if(cover_action !== 'none'){
     payload.cover_url = cover_url_final; // null for remove; string for upload/link
   }
 
-  const { error } = await supabase.from('books').update(payload).eq('id', id);
-  if(error){ toast(error.message); return; }
+  console.log('[editBook] cover_action:', cover_action, { oldUrl, link, cover_url_final, payload });
+  let upd = await supabase.from('books').update(payload).eq('id', id).select('id, cover_url');
+  if(upd.error){ console.error('[editBook] update error:', upd.error); toast(upd.error.message); return; }
+  console.log('[editBook] update result:', upd.data);
   toast('ویرایش شد');
   closeModal('modalBook'); loadCatalog(); loadAdminBooks();
 });
