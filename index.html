@@ -18,6 +18,8 @@
     label { font-size: 12px; color: rgba(226,232,240,.8); }
   </style>
 
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/flatpickr.min.css">
+
 </head>
 <body class="text-slate-100">
   <div id="app" class="max-w-7xl mx-auto p-4 sm:p-6">
@@ -115,14 +117,14 @@
           <div>
             <label>تاریخ امانت (هجری شمسی)</label>
             <div class="date-input-wrap">
-              <input id="loan_borrowed" type="text" data-jalali class="rounded-xl px-3 py-2 w-full" readonly />
+              <input id="loan_borrowed" type="text" class="rounded-xl px-3 py-2 w-full" readonly />
               <button type="button" id="btn_open_borrowed" class="date-btn" style="width:32px;height:32px;display:inline-flex" aria-label="باز کردن تقویم"><i data-lucide="calendar" class="w-4 h-4"></i></button>
             </div>
           </div>
           <div>
             <label>تاریخ سررسید (هجری شمسی)</label>
             <div class="date-input-wrap">
-              <input id="loan_due" type="text" data-jalali class="rounded-xl px-3 py-2 w-full" readonly />
+              <input id="loan_due" type="text" class="rounded-xl px-3 py-2 w-full" readonly />
               <button type="button" id="btn_open_due" class="date-btn" style="width:32px;height:32px;display:inline-flex" aria-label="باز کردن تقویم"><i data-lucide="calendar" class="w-4 h-4"></i></button>
             </div>
           </div>
@@ -196,8 +198,8 @@ const fmtDate = (s)=>{
     try{ return new Date(s).toLocaleDateString('fa-IR'); }catch(_){ return s||'—'; }
   }
 };
-function is404(err){ try{ return (err && (err.code==="PGRST116" || (err.message||'').includes('rpc') || (err.status||'')===404)); }catch(_){ return false; } }
-function isBadYear(y){ return !(y>=1900 && y<=2100); }
+function toEnDigits(s){return (s||'').replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d));}
+function normalizeJalali(s){s=toEnDigits(String(s||'').trim()).replaceAll('-', '/'); const m=s.match(/^(\d{4})[\/](\d{1,2})[\/](\d{1,2})$/); return m?`${m[1]}/${String(parseInt(m[2],10)).padStart(2,'0')}/${String(parseInt(m[3],10)).padStart(2,'0')}`:'';}
 const toast = (msg)=>{ const el=document.createElement('div'); el.className='fixed bottom-4 right-4 bg-black/80 text-white px-3 py-2 rounded-xl text-sm'; el.textContent=msg; document.body.appendChild(el); setTimeout(()=>el.remove(),3000); };
 
 function toCSV(rows){
@@ -321,6 +323,7 @@ async function loadCatalog(q=''){
   }).join('');
 }
 
+
 const coverInput = $('#bk_cover');
 coverInput?.addEventListener('change', (e)=>{
   const f = e.target.files?.[0]; if(!f) return;
@@ -411,6 +414,7 @@ async function deleteMember(id){
   if(error) return toast(error.message); toast('حذف شد'); loadMembers();
 }
 
+
 $('#loanForm')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const memberId = $('#loan_member_results')?.dataset.sel;
@@ -419,11 +423,11 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
 
   // Borrowed date (Jalali) -> Gregorian ISO
   let borrowed_at_iso;
-  let bStr = normalizeJalali($('#loan_borrowed').value?.trim());
+  const bStr = $('#loan_borrowed').value?.trim();
   if (bStr) {
     try {
-      const parts = bStr.split('/').map(x=>parseInt(x,10));
-      const pb = j2g(parts[0], parts[1], parts[2]);
+      let s = normalizeJalali(bStr);
+      const pb = j2g(parseInt(s.split('/')[0],10), parseInt(s.split('/')[1],10), parseInt(s.split('/')[2],10));
       const gb = new Date(Date.UTC(pb[0], pb[1]-1, pb[2], 12, 0, 0));
       borrowed_at_iso = gb.toISOString();
     } catch(e){}
@@ -432,62 +436,60 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
 
   // Due date (Jalali) -> Gregorian ISO
   let due_at_iso;
-  let dueStr = normalizeJalali($('#loan_due').value?.trim());
+  const dueStr = $('#loan_due').value?.trim();
   if (dueStr) {
     try {
-      const parts = dueStr.split('/').map(x=>parseInt(x,10));
-      let pd = j2g(parts[0], parts[1], parts[2]);
-      if(isBadYear(pd[0])){
-        // Fallback: add settings days to today in UTC
-        let base = new Date();
-        let g = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()+ (window.__loan_days__||14), 12,0,0));
-        due_at_iso = g.toISOString();
-      } else {
-        const g = new Date(Date.UTC(pd[0], pd[1]-1, pd[2], 12, 0, 0));
-        due_at_iso = g.toISOString();
-      }
+      let s2 = normalizeJalali(dueStr);
+      const ps = s2.split('/').map(x=>parseInt(x,10));
+      const pd = j2g(ps[0], ps[1], ps[2]);
+      const g = new Date(Date.UTC(pd[0], pd[1]-1, pd[2], 12, 0, 0));
+      due_at_iso = g.toISOString();
     } catch(e){}
   }
   if(!due_at_iso){
-    let days = 14;
-try{
-  const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
-  if(st && typeof st.default_loan_days === 'number') days = st.default_loan_days; window.__loan_days__ = days;
-}catch(_){}
-due_at_iso = new Date(Date.now() + days*24*3600*1000).toISOString();
+    const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
+    const days = st?.default_loan_days || 14;
+    const now = new Date();
+    const g = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()+days, 12,0,0));
+    due_at_iso = g.toISOString();
   }
 
   // Try RPC with borrowed_at support first; fallback if arg not accepted
   let rpcError = null, loan = null;
   let payload = {
-  p_book_id: parseInt(bookId, 10),
-  p_member_id: parseInt(memberId, 10),
-  p_admin_id: user.id,
-  p_due_at: due_at_iso
-};
-  let res; try{ res = await supabase.rpc('issue_loan', payload); }catch(e){ res = { error: e }; }
+    p_book_id: parseInt(bookId, 10),
+    p_member_id: parseInt(memberId, 10),
+    p_admin_id: user.id,
+    p_due_at: due_at_iso,
+    p_borrowed_at: borrowed_at_iso
+  };
+  let res = await supabase.rpc('issue_loan', payload);
   if(res.error){
-  // Fallback to direct insert when RPC is missing or incompatible
-  if(is404(res.error)){
-    let ins = await supabase.from('loans').insert({
-      book_id: parseInt(bookId,10),
-      member_id: parseInt(memberId,10),
-      admin_id: user.id,
-      borrowed_at: borrowed_at_iso,
-      due_at: due_at_iso
-    }).select().maybeSingle();
-    if(ins.error){ toast(ins.error.message || 'خطا در ثبت امانت'); return; }
-    loan = ins.data;
-  } else {
-    // Retry without p_borrowed_at via RPC
-    payload = { p_book_id: parseInt(bookId,10), p_member_id: parseInt(memberId,10), p_admin_id: user.id, p_due_at: due_at_iso };
+    // Retry without p_borrowed_at
+    payload = {
+      p_book_id: parseInt(bookId, 10),
+      p_member_id: parseInt(memberId, 10),
+      p_admin_id: user.id,
+      p_due_at: due_at_iso
+    };
     res = await supabase.rpc('issue_loan', payload);
     if(res.error){ toast(res.error.message || 'خطا در ثبت امانت'); return; }
     loan = res.data;
-    }
-} else {
-  loan = res.data;
-}
+    // If loan id returned, update borrowed_at explicitly
+    try{
+      if(loan && loan.id){
+        await supabase.from('loans').update({ borrowed_at: borrowed_at_iso }).eq('id', loan.id);
+      }
+    }catch(e){}
+  }else{
+    loan = res.data;
+    // If server didn't set borrowed_at, update
+    try{
+      if(loan && loan.id){
+        await supabase.from('loans').update({ borrowed_at: borrowed_at_iso }).eq('id', loan.id);
+      }
+    }catch(e){}
+  }
 
   toast('امانت ثبت شد');
   // Reset quick inputs
@@ -496,39 +498,19 @@ due_at_iso = new Date(Date.now() + days*24*3600*1000).toISOString();
   loadCatalog(); loadLoans();
 });
 
-
-
 $('#loan_member_query')?.addEventListener('input', async (e)=>{
-  const q = e.target.value.trim();
-  const box = $('#loan_member_results');
-  if(!q){ box.innerHTML=''; box.dataset.sel=''; return; }
-  let { data, error } = await supabase.from('members')
-    .select('id,first_name,last_name,student_id')
-    .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,student_id.ilike.%${q}%`)
-    .limit(8);
-  if(error){ box.innerHTML=''; return; }
-  box.innerHTML = (data||[]).map(m =>
-    `<button class="chip px-2 py-1 rounded" data-id="${m.id}">${m.first_name||''} ${m.last_name||''} • ${m.student_id||''}</button>`
-  ).join('');
-  $$('#loan_member_results button').forEach(b => b.onclick = () => { box.dataset.sel = b.dataset.id; toast('عضو انتخاب شد'); });
+  const q = e.target.value.trim(); if(!q){ $('#loan_member_results').innerHTML=''; $('#loan_member_results').dataset.sel=''; return; }
+  let { data } = await supabase.from('members').select('id,first_name,last_name,student_id').or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,student_id.ilike.%${q}%`).limit(8);
+  $('#loan_member_results').innerHTML = (data||[]).map(m=>`<button class='chip px-2 py-1 rounded-lg mr-1 mb-1' data-id='${m.id}'>${m.first_name||''} ${m.last_name||''} • ${m.student_id||''}</button>`).join('');
+  $$('#loan_member_results button').forEach(b=> b.onclick = ()=>{ $('#loan_member_results').dataset.sel=b.dataset.id; toast('عضو انتخاب شد'); });
 });
-
-
 $('#loan_book_query')?.addEventListener('input', async (e)=>{
-  const q = e.target.value.trim();
-  const box = $('#loan_book_results');
-  if(!q){ box.innerHTML=''; box.dataset.sel=''; return; }
-  let { data, error } = await supabase.from('books')
-    .select('id,title,author,isbn,available_copies')
-    .or(`title.ilike.%${q}%,author.ilike.%${q}%,isbn.ilike.%${q}%`)
-    .gte('available_copies',1)
-    .limit(8);
-  if(error){ box.innerHTML=''; return; }
-  box.innerHTML = (data||[]).map(b =>
-    `<button class="chip px-2 py-1 rounded" data-id="${b.id}">${b.title||''}${b.author ? ' • '+b.author : ''}${b.isbn ? ' • '+b.isbn : ''}</button>`
-  ).join('');
-  $$('#loan_book_results button').forEach(b => b.onclick = () => { box.dataset.sel = b.dataset.id; toast('کتاب انتخاب شد'); });
+  const q = e.target.value.trim(); if(!q){ $('#loan_book_results').innerHTML=''; $('#loan_book_results').dataset.sel=''; return; }
+  let { data } = await supabase.from('books').select('id,title,author,isbn,available_copies').or(`title.ilike.%${q}%,author.ilike.%${q}%,isbn.ilike.%${q}%`).gte('available_copies',1).limit(8);
+  $('#loan_book_results').innerHTML = (data||[]).map(b=>`<button class='chip px-2 py-1 rounded-lg mr-1 mb-1' data-id='${b.id}'>${b.title} ${b.author? '• '+b.author:''} ${b.isbn? '• '+b.isbn:''}</button>`).join('');
+  $$('#loan_book_results button').forEach(b=> b.onclick = ()=>{ $('#loan_book_results').dataset.sel=b.dataset.id; toast('کتاب انتخاب شد'); });
 });
+
 
 async function loadLoans(){
   const { data, error } = await supabase
@@ -577,14 +559,17 @@ async function loadLoans(){
     </div>`).join('');
 }
 
+
+
 async function extendLoan(id){
   // Load loan & defaults
   const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
   if(error || !l){ toast('یافت نشد'); return; }
-  const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
-  const addDays = (st?.default_loan_days ?? 14);
+  const { data: st } = await supabase.from('settings').select('default_renew_days').eq('id',1).maybeSingle();
+  const addDays = st?.default_renew_days || 7;
 
-  const base = l.due_at ? new Date(l.due_at) : new Date();
+  const baseRaw = l.due_at ? new Date(l.due_at) : new Date();
+  const base = isValidYear ? (isValidYear(baseRaw.getUTCFullYear()) ? baseRaw : new Date()) : baseRaw;
   const newDue = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()+addDays, 12,0,0));
 
   const modal = document.getElementById('extend-modal');
@@ -597,14 +582,26 @@ async function extendLoan(id){
     const j = g2j(newDue.getUTCFullYear(), newDue.getUTCMonth()+1, newDue.getUTCDate());
     inp.value = fmtJ(j[0], j[1], j[2]);
   }catch(_){ inp.value = ''; }
-// Show modal
+
+  // Initialize datepicker same as loan_due
+  try{
+    const loanDue = document.getElementById('loan_due');
+    if (loanDue && loanDue._flatpickr && window.flatpickr) {
+      const cfg = Object.assign({}, loanDue._flatpickr.config);
+      if (inp._flatpickr) inp._flatpickr.destroy();
+      window.flatpickr(inp, cfg);
+      inp._flatpickr.setDate(newDue, true);
+    }
+  }catch(_){}
+
+  // Show modal
   modal.classList.remove('hidden'); modal.classList.add('flex');
 
   const handlerOk = async ()=>{
-    let s = normalizeJalali(inp.value||'');
-    if(!s){ toast('تاریخ نامعتبر'); return; }
-    const ps = s.split('/').map(x=>parseInt(x,10));
-    const g = j2g(ps[0], ps[1], ps[2]);
+    let si = normalizeJalali(inp.value||'');
+    if(!si){ toast('تاریخ نامعتبر'); return; }
+    const p = si.split('/').map(x=>parseInt(x,10));
+    const g = j2g(p[0], p[1], p[2]);
     const due_at = new Date(Date.UTC(g[0], g[1]-1, g[2], 12, 0, 0));
     const payload = { due_at: due_at.toISOString(), renewals_count: (l.renewals_count||0) + 1 };
     const { error: e2 } = await supabase.from('loans').update(payload).eq('id', id);
@@ -720,9 +717,10 @@ function openModal(id){ const el=document.getElementById(id); if(!el) return; el
 function closeModal(id){ const el=document.getElementById(id); if(!el) return; el.classList.add('hidden'); el.classList.remove('flex'); }
 
 // === Datepicker init ===
+  // persianDatepicker (external) removed; using flatpickr config clone instead.
 // Init loan due picker on page
 document.addEventListener('DOMContentLoaded', ()=>{
-  
+  initJalaliPicker('#loan_due');
 });
 
 // === Book edit via modal ===
@@ -805,7 +803,7 @@ async function editLoan(id){
 
   // helper to set jalali to inputs
   const setJalali = (el, d)=>{
-    const j = g2j(d.getFullYear(), d.getMonth()+1, d.getDate());
+    const j = g2j(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate());
     el.value = fmtJ(j[0], j[1], j[2]);
   };
 
@@ -828,7 +826,26 @@ async function editLoan(id){
     res.appendChild(chip);
     res.dataset.sel = String(l.member_id);
   } else { res.dataset.sel = ''; }
-// Member search
+
+  // Init datepickers same as loan_form
+  try{
+    const loanBorrowed = document.getElementById('loan_borrowed');
+    if (loanBorrowed && loanBorrowed._flatpickr && window.flatpickr) {
+      const cfg = Object.assign({}, loanBorrowed._flatpickr.config);
+      if (inpBorrowed._flatpickr) inpBorrowed._flatpickr.destroy();
+      window.flatpickr(inpBorrowed, cfg);
+      inpBorrowed._flatpickr.setDate(l.borrowed_at ? new Date(l.borrowed_at) : new Date(), true);
+    }
+    const loanDue = document.getElementById('loan_due');
+    if (loanDue && loanDue._flatpickr && window.flatpickr) {
+      const cfg2 = Object.assign({}, loanDue._flatpickr.config);
+      if (inpDue._flatpickr) inpDue._flatpickr.destroy();
+      window.flatpickr(inpDue, cfg2);
+      inpDue._flatpickr.setDate(l.due_at ? new Date(l.due_at) : new Date(), true);
+    }
+  }catch(_){}
+
+  // Member search
   q.oninput = async (e)=>{
     const s = e.target.value.trim();
     if(!s){ res.innerHTML=''; res.dataset.sel=''; return; }
@@ -872,6 +889,7 @@ async function editLoan(id){
   btnSave.addEventListener('click', onSave);
   btnCancel.addEventListener('click', onCancel);
 }
+
 
 </script>
 
@@ -944,7 +962,47 @@ async function editLoan(id){
     </div>
   </div>
 
+
 <script>
+// ---------- Robust Persian datepicker binding ----------
+(function(){
+  function bindOnce(selector){
+    if(!ready()) return false;
+    try{
+      jQuery(selector).each(function(){
+        if(this.dataset.pdBound==='1') return;
+        this.dataset.pdBound='1';
+      });
+      return true;
+    }catch(e){ console.error('persian bind', e); }
+    return false;
+  }
+  function retryBind(selector, tries=20, delay=150){
+    let n=0; (function tick(){ if(bindOnce(selector) || n++>=tries) return; setTimeout(tick, delay); })();
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    retryBind('#loan_due');
+    const el = document.getElementById('loan_due');
+    if(el) el.addEventListener('focus', ()=>bindOnce('#loan_due'));
+    document.querySelectorAll('[data-tab="admin-loans"]').forEach(btn=>{
+      btn.addEventListener('click', ()=> setTimeout(()=>retryBind('#loan_due'), 50));
+    });
+  });
+  const mo = new MutationObserver(()=>{
+    bindOnce('input[id^="ml_borrowed"]');
+    bindOnce('input[id^="ml_due"]');
+  });
+  document.addEventListener('DOMContentLoaded', ()=> mo.observe(document.body, {childList:true, subtree:true}));
+  const _origOpen = window.openLoanModal;
+  window.openLoanModal = function(l, opts){
+    if(typeof _origOpen === 'function'){ _origOpen(l, opts); }
+    setTimeout(()=>{
+      bindOnce('input[id^="ml_borrowed"]');
+      bindOnce('input[id^="ml_due"]');
+    }, 0);
+  };
+})();
+
 // ---------- Edit book & member implementations ----------
 window.editBook = async function(input){
   try{
@@ -1047,19 +1105,30 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 </script>
 
+
+
+
+<script src="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/flatpickr.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/l10n/jalaliDate.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr-jalali-support@1.0.3/dist/l10n/fa.js"></script>
 <script>
+// Flatpickr + Jalali init for borrowed/due fields + calendar buttons
 document.addEventListener('DOMContentLoaded', function(){
   function bind(){
+    if(!window.flatpickr) return;
     var base = {
       disableMobile: false,
       dateFormat: "Y/m/d",
       // use Persian locale if available
+      locale: (flatpickr.l10ns && flatpickr.l10ns.fa) ? flatpickr.l10ns.fa : undefined
     };
     var borrowed = document.querySelector('#loan_borrowed');
     var due = document.querySelector('#loan_due');
     if(borrowed && !borrowed._fp){
+      borrowed._fp = flatpickr(borrowed, Object.assign({}, base, { }));
     }
     if(due && !due._fp){
+      due._fp = flatpickr(due, Object.assign({}, base, { }));
     }
     // Buttons
     [['btn_open_borrowed', borrowed], ['btn_open_due', due]].forEach(function([btnId, input]){
@@ -1086,6 +1155,8 @@ document.addEventListener('DOMContentLoaded', function(){
 </script>
 </script>
 
+
+
 <script>
 // ---- Jalali (Jalaali) <-> Gregorian conversion helpers (no external deps) ----
 // Source adapted from jalaali-js (ISC) by Behrang Noruzi Niya - inlined for offline use.
@@ -1109,21 +1180,78 @@ function jalCal(jy){
   if(leap===-1) leap = 4;
   return { leap: leap===0, gy: gy, march: march };
 }
+
 function j2g(jy, jm, jd){
   jy = parseInt(jy,10); jm = parseInt(jm,10); jd = parseInt(jd,10);
-  var r = jalCal(jy), gy = r.gy, march = r.march, gdayno, jdayno;
-  jdayno = 365*(jy-1) + div((jy-1),33)*8 + div(mod((jy-1),33)+3,4);
-  for (var i=1;i<jm;i++) jdayno += (i<=6)?31:((i<=11)?30:29);
-  jdayno += jd;
-  gdayno = jdayno + (gy-1600)*365 + div((gy-1600+3),4) - div((gy-1600+99),100) + div((gy-1600+399),400) - 79;
-  var gy2 = 1600 + 400*div(gdayno,146097); gdayno = mod(gdayno,146097);
-  var leap = true; if (gdayno >= 36525){ gdayno--; gy2 += 100*div(gdayno,36524); gdayno = mod(gdayno,36524); leap = gdayno >= 365; if(leap) gdayno--; }
-  gy2 += 4*div(gdayno,1461); gdayno = mod(gdayno,1461);
-  if (gdayno >= 366){ leap = false; gdayno -= 366; gy2 += div(gdayno,365); gdayno = mod(gdayno,365); }
-  var gd, gm; var gMonth = [31, (leap?29:28),31,30,31,30,31,31,30,31,30,31];
-  for (gm=0; gm<12 && gdayno >= gMonth[gm]; gm++) gdayno -= gMonth[gm];
-  gd = gdayno + 1;
-  return [gy2, gm+1, gd];
+  // Convert Jalali to Gregorian using JDN method (robust)
+  function jalaliToJDN(jy, jm, jd){
+    var epbase = jy - (jy >= 0 ? 474 : 473);
+    var epyear = 474 + (epbase % 2820 + 2820) % 2820;
+    return jd + (jm <= 7 ? (jm-1)*31 : (jm-1)*30 + 6) +
+           Math.floor((epyear*682 - 110) / 2816) +
+           (epyear-1)*365 + Math.floor(epbase/2820)*1029983 + (1948320 - 1);
+  }
+  function jdnToGregorian(jdn){
+    var depoch = jdn - 1721425.5;
+    var quadra = Math.floor(depoch / 146097);
+    var dqc = depoch % 146097;
+    var cent = Math.floor(dqc / 36524);
+    var dcent = dqc % 36524;
+    var quad = Math.floor(dcent / 1461);
+    var dquad = dcent % 1461;
+    var yindex = Math.floor(dquad / 365);
+    var year = quadra*400 + cent*100 + quad*4 + yindex;
+    if (!(cent == 4 || yindex == 4)) year++;
+    var yearday = jdn - (Math.floor((year-1)*365.25) + 1721425);
+    var leap = (year%4===0 && year%100!==0) || (year%400===0);
+    var months = [31, (leap?29:28),31,30,31,30,31,31,30,31,30,31];
+    var month=0, day=0, d=yearday;
+    for(month=0; month<12; month++){
+      var ml = months[month];
+      if(d <= ml){ day = d; break; }
+      d -= ml;
+    }
+    return [year, month+1, day];
+  }
+  var jdn = jalaliToJDN(jy, jm, jd);
+  // Align to noon to avoid timezone issues
+  var g = new Date(Date.UTC(2000,0,1));
+  var a = jdn - 2451545; // days since 2000-01-01 JDN
+  var dt = new Date(Date.UTC(2000,0,1) + a*86400000);
+  return [dt.getUTCFullYear(), dt.getUTCMonth()+1, dt.getUTCDate()];
+}
+function g2j(gy, gm, gd){
+  gy = parseInt(gy,10); gm = parseInt(gm,10); gd = parseInt(gd,10);
+  // Convert Gregorian to Jalali using JDN
+  function gregorianToJDN(gy, gm, gd){
+    var a = Math.floor((14-gm)/12);
+    var y = gy + 4800 - a;
+    var m = gm + 12*a - 3;
+    return gd + Math.floor((153*m + 2)/5) + 365*y + Math.floor(y/4) - Math.floor(y/100) + Math.floor(y/400) - 32045;
+  }
+  function jdnToJalali(jdn){
+    var depoch = jdn - 1948320 + 1;
+    var cycle = Math.floor(depoch / 1029983);
+    var cyear = depoch % 1029983;
+    var ycycle;
+    if (cyear == 1029982) {
+      ycycle = 2820;
+    } else {
+      var aux1 = Math.floor(cyear/366);
+      var aux2 = cyear % 366;
+      ycycle = Math.floor((2134*aux1 + 2816*aux2 + 2815)/1028522) + aux1 + 1;
+    }
+    var jy = ycycle + 2820*cycle + 474;
+    if (jy <= 0) jy--;
+    var jdn1f = 1948320 - 1 + (jy-474) * 365 + Math.floor((jy-474)/33)*8 + Math.floor((((jy-474)%33)+3)/4);
+    var jd = jdn - jdn1f + 1;
+    var jm = (jd <= 186) ? Math.ceil(jd/31) : Math.ceil((jd-186)/30) + 6;
+    var jd2 = jdn - ( (jm<=7) ? (jdn1f + (jm-1)*31) : (jdn1f + 186 + (jm-7)*30) );
+    var day = jd2 + 1;
+    return [jy, jm, day];
+  }
+  var jdn = gregorianToJDN(gy, gm, gd);
+  return jdnToJalali(jdn);
 }
 function g2j(gy, gm, gd){
   gy = parseInt(gy,10); gm = parseInt(gm,10); gd = parseInt(gd,10);
@@ -1142,17 +1270,15 @@ function g2j(gy, gm, gd){
 }
 function pad2(n){ return String(n).padStart(2,'0'); }
 function fmtJ(y,m,d){ return `${y}/${pad2(m)}/${pad2(d)}`; }
-// Helpers to normalize Persian/Arabic digits and validate Jalali input
-function toEnDigits(s){ if(!s) return s; return s.replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/-/g,'/'); }
-function normalizeJalali(s){ s=toEnDigits(String(s||'').trim()); const m=/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(s); if(!m) return ''; const y=+m[1], mo=+m[2], d=+m[3]; if(y<1200||y>1600||mo<1||mo>12) return ''; const md=(mo<=6)?31:((mo<=11)?30:29); if(d<1||d>md) return ''; return `${y}/${String(mo).padStart(2,'0')}/${String(d).padStart(2,'0')}`; }
 </script>
+
 
 <div id="extend-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
   <div class="bg-slate-800 text-white rounded-2xl p-4 w-[90%] max-w-md space-y-3">
     <div class="text-lg font-bold">تمدید امانت</div>
     <div class="space-y-2">
       <label class="text-sm">تاریخ جدید سررسید (شمسی)</label>
-      <input id="extend_due" type="text" data-jalali class="rounded-xl px-3 py-2 w-full bg-slate-700" placeholder="YYYY/MM/DD" />
+      <input id="extend_due" type="text" class="rounded-xl px-3 py-2 w-full bg-slate-700" placeholder="YYYY/MM/DD" />
     </div>
     <div class="flex gap-2 justify-end">
       <button id="extend_cancel" class="px-3 py-2 rounded-xl bg-slate-600">انصراف</button>
@@ -1160,6 +1286,8 @@ function normalizeJalali(s){ s=toEnDigits(String(s||'').trim()); const m=/^(\d{4
     </div>
   </div>
 </div>
+
+
 
 <!-- Edit Loan Modal -->
 <div id="edit-loan-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
@@ -1178,7 +1306,7 @@ function normalizeJalali(s){ s=toEnDigits(String(s||'').trim()); const m=/^(\d{4
       </div>
       <div class="space-y-2">
         <label class="text-sm">تاریخ سررسید (شمسی)</label>
-        <input id="edit_due" type="text" data-jalali class="rounded-xl px-3 py-2 w-full bg-slate-700" placeholder="YYYY/MM/DD" />
+        <input id="edit_due" type="text" class="rounded-xl px-3 py-2 w-full bg-slate-700" placeholder="YYYY/MM/DD" />
       </div>
     </div>
     <div class="flex gap-2 justify-end pt-2">
@@ -1188,18 +1316,29 @@ function normalizeJalali(s){ s=toEnDigits(String(s||'').trim()); const m=/^(\d{4
   </div>
 </div>
 
+
 <script>
+function initJalaliPicker(selector){
+  try{
+    const loanDue = document.getElementById('loan_due');
+    if (loanDue && loanDue._flatpickr && window.flatpickr){
+      const cfg = Object.assign({}, loanDue._flatpickr.config);
+      document.querySelectorAll(selector).forEach(el=>{
+        if(el._flatpickr) el._flatpickr.destroy();
+        window.flatpickr(el, cfg);
+      });
+    }
+  }catch(_){}
+}
 </script>
+
 
 <script>
 async function setDefaultLoanDates(){
   try{
-    let days = 14;
-try{
-  const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
-  if(st && typeof st.default_loan_days === 'number') days = st.default_loan_days; window.__loan_days__ = days;
-}catch(_){}
-const now = new Date();
+    const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
+    const days = st?.default_loan_days || 14;
+    const now = new Date();
     const due = new Date(now.getTime() + days*24*3600*1000);
 
     const bEl = document.getElementById('loan_borrowed');
@@ -1212,53 +1351,13 @@ const now = new Date();
     if(bEl) bEl.value = fmtJ(bj[0], bj[1], bj[2]);
     if(dEl) dEl.value = fmtJ(dj[0], dj[1], dj[2]);
 
-    // trailing setDate block removed
+    // If flatpickr is bound, setDate using Gregorian Date objects
+    try{
+      if (bEl._flatpickr && window.flatpickr){ bEl._flatpickr.setDate(now, true); }
+      if (dEl._flatpickr && window.flatpickr){ dEl._flatpickr.setDate(due, true); }
+    }catch(_){}
   }catch(e){}
 }
-</script>
-
-
-<script>
-// Minimal Jalali Datepicker (vanilla, no external libs)
-(function(){
-  function daysInJMonth(y,m){ return (m<=6)?31:((m<=11)?30:(g2j(j2g(y,12,30)[0], j2g(y,12,30)[1], j2g(y,12,30)[2])[2]===30?30:29)); }
-  function el(tag, cls, html){ const e=document.createElement(tag); if(cls) e.className=cls; if(html!=null) e.innerHTML=html; return e; }
-  function pickFor(input){
-    let val = normalizeJalali(input.value||''); 
-    let jy, jm, jd;
-    if(val){ const ps=val.split('/').map(x=>parseInt(x,10)); jy=ps[0]; jm=ps[1]; jd=ps[2]; }
-    else { const d=new Date(); const j=g2j(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate()); jy=j[0]; jm=j[1]; jd=j[2]; }
-    const box = el('div','z-50 fixed inset-0 bg-black/30'); const wrap = el('div','fixed inset-0 flex items-center justify-center');
-    const card = el('div','bg-slate-800 text-white rounded-2xl p-4 w-[320px]');
-    const head = el('div','flex items-center justify-between mb-2');
-    const btnL = el('button','px-2','‹'); const btnR = el('button','px-2','›'); const title = el('div','font-bold', jy+' / '+String(jm).padStart(2,'0'));
-    head.append(btnL,title,btnR); card.append(head);
-    const grid = el('div','grid grid-cols-7 gap-1');
-    function render(){
-      title.textContent = jy+' / '+String(jm).padStart(2,'0');
-      grid.innerHTML='';
-      const n = daysInJMonth(jy,jm);
-      for(let d=1; d<=n; d++){
-        const b=el('button','py-1 rounded hover:bg-slate-700', String(d).padStart(2,'0'));
-        if(d===jd) b.classList.add('bg-slate-700');
-        b.onclick = ()=>{ jd=d; input.value = fmtJ(jy,jm,jd); document.body.removeChild(box); };
-        grid.append(b);
-      }
-    }
-    btnL.onclick = ()=>{ jm--; if(jm<1){ jm=12; jy--; } render(); };
-    btnR.onclick = ()=>{ jm++; if(jm>12){ jm=1; jy++; } render(); };
-    card.append(grid);
-    const foot = el('div','mt-3 flex justify-end gap-2');
-    const cancel = el('button','px-3 py-1 bg-slate-600 rounded','انصراف');
-    cancel.onclick = ()=> document.body.removeChild(box);
-    foot.append(cancel); card.append(foot);
-    wrap.append(card); box.append(wrap); document.body.append(box); render();
-  }
-  document.addEventListener('click', (e)=>{
-    const t = e.target;
-    if(t && t.matches('input[data-jalali]')){ e.preventDefault(); pickFor(t); }
-  });
-})();
 </script>
 
 </body>
