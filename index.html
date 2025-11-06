@@ -1388,5 +1388,62 @@ const now = new Date();
 })();
 </script>
 
+
+<script>
+// Single source of truth: edit modal submit
+(function(){
+  const form = document.getElementById('formBookModal');
+  if(!form) return;
+  form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const rawId = document.getElementById('mb_id').value;
+    const id = Number(rawId);
+    if(!Number.isInteger(id)){ toast('خطا: شناسهٔ کتاب نامعتبر است'); return; }
+
+    const safeInt = (v)=>{
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const payload = {
+      title: document.getElementById('mb_title').value.trim(),
+      author: document.getElementById('mb_author').value.trim() || null,
+      translator: document.getElementById('mb_translator').value.trim() || null,
+      published_year: safeInt(document.getElementById('mb_published_year').value),
+      pages: safeInt(document.getElementById('mb_pages').value),
+      subject: document.getElementById('mb_subject').value.trim() || null,
+      keywords: (document.getElementById('mb_keywords').value||'').split(';').map(s=>s.trim()).filter(Boolean),
+      publisher: document.getElementById('mb_publisher').value.trim() || null,
+      isbn: document.getElementById('mb_isbn').value.trim() || null,
+      total_copies: safeInt(document.getElementById('mb_total_copies').value) || 1
+    };
+
+    // Cover change logic
+    const file = document.getElementById('mb_cover_file')?.files?.[0];
+    const link = (document.getElementById('mb_cover_url')?.value||'').trim();
+    const clear = !!document.getElementById('mb_cover_clear')?.checked;
+    try{
+      if(clear){
+        payload.cover_url = null;
+      } else if(link){
+        payload.cover_url = link;
+      } else if(file){
+        const safeName = ('c'+Date.now()+'-'+file.name).replace(/[^a-zA-Z0-9\\._-]/g,'_');
+        const up = await supabase.storage.from('book_covers').upload(safeName, file, { contentType: file.type, upsert: true });
+        if(up.error){ toast(up.error.message); return; }
+        const pub = supabase.storage.from('book_covers').getPublicUrl(up.data.path); payload.cover_url = pub.data.publicUrl;
+      }
+    }catch(err){ toast(err.message||'خطا در پردازش عکس جلد'); return; }
+
+    const upd = await supabase.from('books').update(payload).eq('id', id).select();
+    if(upd.error){ toast(upd.error.message); return; }
+    if(!upd.data || upd.data.length === 0){ toast('هیچ رکوردی بروزرسانی نشد (شناسه یافت نشد)'); return; }
+
+    toast('کتاب بروزرسانی شد');
+    closeModal('modalBook'); loadCatalog(); loadAdminBooks();
+  });
+})();
+</script>
+
 </body>
 </html>
