@@ -183,7 +183,7 @@
 
     <footer class="mt-8 text-center text-xs text-slate-400/80">
       کانون مهدویت صبح باور • معاونت فرهنگی و اجتماعی دانشگاه صنعتی اصفهان
-    <div class="fixed bottom-2 left-2 text-[10px] px-2 py-1 rounded bg-slate-700/70 border border-white/10">Build v39</div>
+    <div class="fixed bottom-2 left-2 text-[10px] px-2 py-1 rounded bg-slate-700/70 border border-white/10">Build v40</div>
 </footer>
   </div>
 
@@ -813,7 +813,7 @@ document.getElementById('formBookModal')?.addEventListener('submit', async (e)=>
   }
 
   console.log('[editBook] cover_action:', cover_action, { oldUrl, link, cover_url_final, payload });
-  let upd = await supabase.from('books').update(payload).eq('id', id).select('id, cover_url');
+  let upd = await supabase.from('books').update(payload).eq('id', id).select('id, cover_url').single();
   const dbg = document.getElementById('mb_debug');
   if(upd.error){ console.error('[editBook] update error:', upd.error); if(dbg) dbg.textContent = 'خطای ذخیره: ' + (upd.error.message||upd.error.code||'نامشخص'); toast(upd.error.message); return; }
   if(!upd.data || upd.data.length===0){ if(dbg) dbg.textContent = 'هیچ ردیفی به‌روزرسانی نشد (ممکن است RLS/کش/فایل قدیمی باشد)'; toast('هیچ ردیفی به‌روزرسانی نشد'); return; }
