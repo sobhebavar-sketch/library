@@ -581,7 +581,7 @@ async function extendLoan(id){
   // Load loan & defaults
   const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
   if(error || !l){ toast('یافت نشد'); return; }
-  const { data: st } = await supabase.from('settings').select('default_loan_days,default_renew_days').eq('id',1).maybeSingle();
+  const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
   const addDays = (st?.default_loan_days ?? 14);
 
   const base = l.due_at ? new Date(l.due_at) : new Date();
