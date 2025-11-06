@@ -810,7 +810,10 @@ document.getElementById('formBookModal')?.addEventListener('submit', async (e)=>
 
   console.log('[editBook] cover_action:', cover_action, { oldUrl, link, cover_url_final, payload });
   let upd = await supabase.from('books').update(payload).eq('id', id).select('id, cover_url');
-  if(upd.error){ console.error('[editBook] update error:', upd.error); toast(upd.error.message); return; }
+  const dbg = document.getElementById('mb_debug');
+  if(upd.error){ console.error('[editBook] update error:', upd.error); if(dbg) dbg.textContent = 'خطای ذخیره: ' + (upd.error.message||upd.error.code||'نامشخص'); toast(upd.error.message); return; }
+  const res = JSON.stringify(upd.data||[], null, 0);
+  if(dbg) dbg.textContent = 'نتیجه ذخیره: ' + res;
   console.log('[editBook] update result:', upd.data);
   toast('ویرایش شد');
   closeModal('modalBook'); loadCatalog(); loadAdminBooks();
@@ -948,6 +951,7 @@ async function editLoan(id){
     <div class="bg-slate-800 rounded-2xl p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between mb-4">
         <h3 class="font-bold" id="modalBookTitle">ویرایش کتاب</h3>
+        <div id="mb_debug" class="text-xs opacity-70"></div>
         <button class="px-2 py-1 rounded-lg bg-slate-700" onclick="closeModal('modalBook')">✕</button>
       </div>
       <form id="formBookModal" class="grid md:grid-cols-3 gap-4">
