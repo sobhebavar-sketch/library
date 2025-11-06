@@ -441,8 +441,12 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
     } catch(e){}
   }
   if(!due_at_iso){
+    let days = 14;
+  try{
     const { data: st } = await supabase.from('settings').select('default_loan_days,default_renew_days').eq('id',1).maybeSingle();
-    const days = (st?.default_loan_days ?? st?.default_renew_days ?? 14);
+    days = (st?.default_loan_days ?? st?.default_renew_days ?? 14);
+  }catch(_){}
+
     due_at_iso = new Date(Date.now() + days*24*3600*1000).toISOString();
   }
 
@@ -455,8 +459,8 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
     p_due_at: due_at_iso,
     p_borrowed_at: borrowed_at_iso
   };
-  let res = await supabase.rpc('issue_loan', payload);
-if(res.error){
+  let res; try{ res = await supabase.rpc('issue_loan', payload); }catch(e){ res = { error: e }; }
+  if(res.error){
   // Fallback to direct insert when RPC is missing or incompatible
   if(is404(res.error)){
     let ins = await supabase.from('loans').insert({
@@ -1184,8 +1188,12 @@ function normalizeJalali(s){ s=toEnDigits(String(s||'').trim()); const m=/^(\d{4
 <script>
 async function setDefaultLoanDates(){
   try{
+    let days = 14;
+  try{
     const { data: st } = await supabase.from('settings').select('default_loan_days,default_renew_days').eq('id',1).maybeSingle();
-    const days = (st?.default_loan_days ?? st?.default_renew_days ?? 14);
+    days = (st?.default_loan_days ?? st?.default_renew_days ?? 14);
+  }catch(_){}
+
     const now = new Date();
     const due = new Date(now.getTime() + days*24*3600*1000);
 
