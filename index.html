@@ -752,7 +752,7 @@ document.getElementById('formBookModal')?.addEventListener('submit', async (e)=>
   let link = (document.getElementById('mb_cover_url')?.value||'').trim(); link = resolveCoverLink(link);
   if(wantRemove){
     // try to delete the old file from storage if it belongs to our bucket
-    const m = oldUrl.match(/\/object\/public\/book_covers\/(.+)$/);
+    const m = oldUrl.replace('/storage','').match(/\/object\/public\/book_covers\/(.+)$/);
     if(m){ try{ const del = await supabase.storage.from('book_covers').remove([m[1]]); if(del?.error){ console.warn(del.error); } }catch(e){ console.warn(e); } }
     cover_url_final = null;
   } else if(f){
@@ -760,6 +760,9 @@ document.getElementById('formBookModal')?.addEventListener('submit', async (e)=>
     const up = await supabase.storage.from('book_covers').upload(safeName, f, { contentType: f.type, upsert: true });
     if(up.error){ toast(up.error.message); return; }
     const pub = supabase.storage.from('book_covers').getPublicUrl(up.data.path); cover_url_final = pub.data.publicUrl;
+    if(oldUrl && /\/object\/public\/book_covers\//.test(oldUrl)){
+      const mm = oldUrl.match(/\/object\/public\/book_covers\/(.+)$/); if(mm){ try{ await supabase.storage.from('book_covers').remove([mm[1]]); }catch(_){} }
+    }
   } else if(link) {
     cover_url_final = link;
   }
