@@ -806,7 +806,7 @@ document.getElementById('formBookModal')?.addEventListener('submit', async (e)=>
     if(wantRemove){ payload.cover_url = null; }
     else if(cover_url_final !== null){ payload.cover_url = cover_url_final; }
 
-    const { error } = await supabase.from('books').update(payload).eq('id', id);
+    const { data, error } = await supabase.from('books').update(payload).eq('id', id).select().single();
     if(error){ toast(error.message); return; }
     toast('کتاب به‌روزرسانی شد');
     closeModal('modalBook');
