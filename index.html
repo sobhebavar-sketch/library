@@ -183,7 +183,9 @@
 <script>
 const SUPABASE_URL = "https://haqocojpgoqiktftdjyw.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhhcW9jb2pwZ29xaWt0ZnRkanl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE3MjA4MzIsImV4cCI6MjA3NzI5NjgzMn0.X7PMt1j3wpIBHNfn6RVz_SzDCnqTRZgHtLx0XidsF7Y";
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// تغییر نام متغیر به db برای حل مشکل تداخل نام
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const $ = (sel)=> document.querySelector(sel);
 const $$ = (sel)=> Array.from(document.querySelectorAll(sel));
@@ -221,10 +223,10 @@ const download = (filename, content, mime='text/csv')=>{
 
 let user = null, profile = null;
 async function refreshSession(){
-  const { data:{ session } } = await supabase.auth.getSession();
+  const { data:{ session } } = await db.auth.getSession();
   user = session?.user || null;
   if(user){
-    const { data: p } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+    const { data: p } = await db.from('profiles').select('*').eq('id', user.id).maybeSingle();
     profile = p || { id:user.id, full_name:user.email, is_admin:false };
   }
   renderHeader();
@@ -242,7 +244,7 @@ function renderHeader(){
     <span class="text-sm">${profile?.full_name || user.email}</span>
     <button id="btnSignOut" class="px-3 py-1 rounded-xl bg-rose-600">خروج</button>
   `;
-  $('#btnSignOut').onclick = async ()=>{ await supabase.auth.signOut(); location.reload(); };
+  $('#btnSignOut').onclick = async ()=>{ await db.auth.signOut(); location.reload(); };
   $('#adminShell').classList.remove('hidden');
   selectTab('admin-books');
   loadAdminBooks(); loadMembers(); loadLoans(); loadSettings();
@@ -253,12 +255,12 @@ $('#btnAdminAuth').onclick = async () => {
   const password = email ? prompt('رمز عبور:') : null;
   if(!email || !password) return;
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { error } = await db.auth.signInWithPassword({ email, password });
   if(!error){ await refreshSession(); return; }
 
   const needSignup = error.message?.includes('Invalid login credentials') || error.status === 400;
   if(needSignup){
-    const { error: e2 } = await supabase.auth.signUp({ email, password });
+    const { error: e2 } = await db.auth.signUp({ email, password });
     if(e2){ toast(e2.message); return; }
     toast('ثبت‌نام انجام شد؛ دوباره روی «ورود کتابدار» بزنید.');
     return;
@@ -278,7 +280,7 @@ function selectTab(name){
 $('#btnSearch').onclick = ()=> loadCatalog($('#search').value.trim());
 
 async function loadCatalog(q=''){
-  let query = supabase.from('books').select('id,title,author,translator,subject,keywords,publisher,isbn,published_year,pages,total_copies,available_copies,cover_url').order('title');
+  let query = db.from('books').select('id,title,author,translator,subject,keywords,publisher,isbn,published_year,pages,total_copies,available_copies,cover_url').order('title');
   if(q){
     query = query.or(`title.ilike.%${q}%,author.ilike.%${q}%,translator.ilike.%${q}%,subject.ilike.%${q}%,publisher.ilike.%${q}%,isbn.ilike.%${q}%`);
   }
@@ -339,7 +341,7 @@ $('#bookForm')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const title = $('#bk_title').value.trim();
   if(!title) return toast('عنوان الزامی است');
-  const { data: exists } = await supabase.from('books').select('id').ilike('title', title).limit(1);
+  const { data: exists } = await db.from('books').select('id').ilike('title', title).limit(1);
   if((exists||[]).length){ toast('کتابی با این عنوان قبلاً ثبت شده است'); return; }
 
   let cover_url = null;
@@ -349,9 +351,9 @@ $('#bookForm')?.addEventListener('submit', async (e)=>{
     cover_url = link;
   } else if(file){
     const safeName = ('c'+Date.now()+'-'+file.name).replace(/[^a-zA-Z0-9\.\-_]/g,'_');
-    const up = await supabase.storage.from('book_covers').upload(safeName, file, { contentType: file.type, upsert: true });
+    const up = await db.storage.from('book_covers').upload(safeName, file, { contentType: file.type, upsert: true });
     if(up.error) return toast(up.error.message);
-    const pub = supabase.storage.from('book_covers').getPublicUrl(up.data.path); cover_url = pub.data.publicUrl;
+    const pub = db.storage.from('book_covers').getPublicUrl(up.data.path); cover_url = pub.data.publicUrl;
   }
 
   const payload = {
@@ -368,7 +370,7 @@ $('#bookForm')?.addEventListener('submit', async (e)=>{
     available_copies: parseInt($('#bk_total').value,10)||1,
     cover_url
   };
-  const { error } = await supabase.from('books').insert(payload);
+  const { error } = await db.from('books').insert(payload);
   if(error) return toast(error.message);
   toast('کتاب ذخیره شد');
   ['#bk_title','#bk_author','#bk_translator','#bk_pages','#bk_published_year','#bk_subject','#bk_keywords','#bk_publisher','#bk_isbn'].forEach(s=> $(s).value='');
@@ -376,7 +378,7 @@ $('#bookForm')?.addEventListener('submit', async (e)=>{
   loadCatalog(); loadAdminBooks();
 });
 async function loadAdminBooks(){
-  const { data, error } = await supabase.from('books').select('*').order('created_at', { ascending:false });
+  const { data, error } = await db.from('books').select('*').order('created_at', { ascending:false });
   if(error) return toast(error.message);
   $('#adminBooks').innerHTML = (data||[]).map(b=>`
     <div class="glass rounded-2xl p-4 flex items-center justify-between">
@@ -396,14 +398,14 @@ async function loadAdminBooks(){
 }
 async function deleteBook(id){
   if(!confirm('کتاب حذف شود؟')) return;
-  const { error } = await supabase.from('books').delete().eq('id', id);
+  const { error } = await db.from('books').delete().eq('id', id);
   if(error) return toast(error.message);
   toast('حذف شد'); loadCatalog(); loadAdminBooks();
 }
 async function editBook(b){ /* replaced by modal version */ return window.editBook(b); }
 
 async function loadMembers(){
-  const { data, error } = await supabase.from('members').select('*').order('last_name');
+  const { data, error } = await db.from('members').select('*').order('last_name');
   if(error) return toast(error.message);
   $('#membersList').innerHTML = (data||[]).map(m=>`
     <div class="glass rounded-2xl p-4 flex items-center justify-between">
@@ -420,7 +422,7 @@ async function loadMembers(){
 async function editMember(m){ /* replaced by modal version */ return window.editMember(m); }
 async function deleteMember(id){
   if(!confirm('عضو حذف شود؟')) return;
-  const { error } = await supabase.from('members').delete().eq('id', id);
+  const { error } = await db.from('members').delete().eq('id', id);
   if(error) return toast(error.message); toast('حذف شد'); loadMembers();
 }
 
@@ -464,7 +466,7 @@ $('#loanForm')?.addEventListener('submit', async (e)=>{
   if(!due_at_iso){
     let days = 14;
 try{
-  const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
+  const { data: st } = await db.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
   if(st && typeof st.default_loan_days === 'number') days = st.default_loan_days; window.__loan_days__ = days;
 }catch(_){}
 due_at_iso = new Date(Date.now() + days*24*3600*1000).toISOString();
@@ -478,11 +480,11 @@ due_at_iso = new Date(Date.now() + days*24*3600*1000).toISOString();
   p_admin_id: user.id,
   p_due_at: due_at_iso
 };
-  let res; try{ res = await supabase.rpc('issue_loan', payload); }catch(e){ res = { error: e }; }
+  let res; try{ res = await db.rpc('issue_loan', payload); }catch(e){ res = { error: e }; }
   if(res.error){
   // Fallback to direct insert when RPC is missing or incompatible
   if(is404(res.error)){
-    let ins = await supabase.from('loans').insert({
+    let ins = await db.from('loans').insert({
       book_id: parseInt(bookId,10),
       member_id: parseInt(memberId,10),
       admin_id: user.id,
@@ -494,7 +496,7 @@ due_at_iso = new Date(Date.now() + days*24*3600*1000).toISOString();
   } else {
     // Retry without p_borrowed_at via RPC
     payload = { p_book_id: parseInt(bookId,10), p_member_id: parseInt(memberId,10), p_admin_id: user.id, p_due_at: due_at_iso };
-    res = await supabase.rpc('issue_loan', payload);
+    res = await db.rpc('issue_loan', payload);
     if(res.error){ toast(res.error.message || 'خطا در ثبت امانت'); return; }
     loan = res.data;
     }
@@ -515,7 +517,7 @@ $('#loan_member_query')?.addEventListener('input', async (e)=>{
   const q = e.target.value.trim();
   const box = $('#loan_member_results');
   if(!q){ box.innerHTML=''; box.dataset.sel=''; return; }
-  let { data, error } = await supabase.from('members')
+  let { data, error } = await db.from('members')
     .select('id,first_name,last_name,student_id')
     .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,student_id.ilike.%${q}%`)
     .limit(8);
@@ -531,7 +533,7 @@ $('#loan_book_query')?.addEventListener('input', async (e)=>{
   const q = e.target.value.trim();
   const box = $('#loan_book_results');
   if(!q){ box.innerHTML=''; box.dataset.sel=''; return; }
-  let { data, error } = await supabase.from('books')
+  let { data, error } = await db.from('books')
     .select('id,title,author,isbn,available_copies')
     .or(`title.ilike.%${q}%,author.ilike.%${q}%,isbn.ilike.%${q}%`)
     .gte('available_copies',1)
@@ -544,7 +546,7 @@ $('#loan_book_query')?.addEventListener('input', async (e)=>{
 });
 
 async function loadLoans(){
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('loans')
     .select('id,borrowed_at,due_at,returned_at, renewals_count, members:member_id(first_name,last_name), books:book_id(title), admins:issued_by_admin_id(full_name)')
     .is('returned_at', null)
@@ -592,9 +594,9 @@ async function loadLoans(){
 
 async function extendLoan(id){
   // Load loan & defaults
-  const { data: l, error } = await supabase.from('loans').select('*').eq('id', id).maybeSingle();
+  const { data: l, error } = await db.from('loans').select('*').eq('id', id).maybeSingle();
   if(error || !l){ toast('یافت نشد'); return; }
-  const { data: st } = await supabase.from('settings').select('default_renew_days, default_loan_days').eq('id',1).maybeSingle();
+  const { data: st } = await db.from('settings').select('default_renew_days, default_loan_days').eq('id',1).maybeSingle();
   const addDaysN = (Number.isFinite(parseInt(st?.default_renew_days)) ? parseInt(st.default_renew_days,10)
                    : (Number.isFinite(parseInt(st?.default_loan_days)) ? parseInt(st.default_loan_days,10) : 14));
 
@@ -620,7 +622,7 @@ async function extendLoan(id){
       due_at: isoFromJalaliUTC(jy,jm,jd),
       renewals_count: (l.renewals_count||0) + 1 
     };
-    const { error: e2 } = await supabase.from('loans').update(payload).eq('id', id);
+    const { error: e2 } = await db.from('loans').update(payload).eq('id', id);
     if(e2){ toast(e2.message); return; }
     toast('تمدید شد');
     modal.classList.add('hidden'); modal.classList.remove('flex');
@@ -638,7 +640,7 @@ async function extendLoan(id){
   btnCancel.addEventListener('click', handlerCancel);
 }
 async function returnLoan(id){
-  const { data, error } = await supabase.rpc('return_loan', { p_loan_id: id });
+  const { data, error } = await db.rpc('return_loan', { p_loan_id: id });
   if (error) { toast(error.message || 'خطا در ثبت بازگشت'); return; }
   toast('بازگشت ثبت شد'); loadCatalog(); loadLoans();
 }
@@ -664,7 +666,7 @@ $('#btnImportMembers')?.addEventListener('click', async ()=>{
   }));
   const valid = mapped.filter(m=> m.first_name || m.last_name || m.student_id || m.email);
   if(!valid.length) return toast('هیچ رکورد معتبری یافت نشد');
-  const { error } = await supabase.from('members').insert(valid);
+  const { error } = await db.from('members').insert(valid);
   if(error) return toast(error.message); toast('ایمپورت اعضا انجام شد'); loadMembers();
 });
 $('#btnImportBooks')?.addEventListener('click', async ()=>{
@@ -686,15 +688,15 @@ $('#btnImportBooks')?.addEventListener('click', async ()=>{
   }));
   const valid = mapped.filter(b=> b.title);
   if(!valid.length) return toast('هیچ رکورد معتبری یافت نشد');
-  const { error } = await supabase.from('books').insert(valid);
+  const { error } = await db.from('books').insert(valid);
   if(error) return toast(error.message); toast('ایمپورت کتاب‌ها انجام شد'); loadCatalog(); loadAdminBooks();
 });
-$('#btnExportBooks')?.addEventListener('click', async ()=>{ const { data } = await supabase.from('books').select('*'); download('books.csv', toCSV(data||[])); });
-$('#btnExportMembers')?.addEventListener('click', async ()=>{ const { data } = await supabase.from('members').select('*'); download('members.csv', toCSV(data||[])); });
-$('#btnExportLoans')?.addEventListener('click', async ()=>{ const { data } = await supabase.from('loans').select('id,book_id,member_id,borrowed_at,due_at,returned_at,renewals_count'); download('loans.csv', toCSV(data||[])); });
+$('#btnExportBooks')?.addEventListener('click', async ()=>{ const { data } = await db.from('books').select('*'); download('books.csv', toCSV(data||[])); });
+$('#btnExportMembers')?.addEventListener('click', async ()=>{ const { data } = await db.from('members').select('*'); download('members.csv', toCSV(data||[])); });
+$('#btnExportLoans')?.addEventListener('click', async ()=>{ const { data } = await db.from('loans').select('id,book_id,member_id,borrowed_at,due_at,returned_at,renewals_count'); download('loans.csv', toCSV(data||[])); });
 
 async function loadSettings(){
-  const { data } = await supabase.from('settings').select('*').eq('id',1).maybeSingle();
+  const { data } = await db.from('settings').select('*').eq('id',1).maybeSingle();
   $('#st_default_days').value = data?.default_loan_days ?? 14;
   $('#st_renew_days').value = data?.default_renew_days ?? 7;
   $('#st_tagline').value = data?.tagline || '';
@@ -707,9 +709,9 @@ $('#settingsForm')?.addEventListener('submit', async (e)=>{
   const file = document.getElementById('st_logo').files?.[0];
   if(file){
     const safe = ('logo-'+Date.now()+'-'+file.name).replace(/[^a-zA-Z0-9\.\-_]/g,'_');
-    const up = await supabase.storage.from('book_covers').upload(safe, file, { contentType: file.type, upsert: true });
+    const up = await db.storage.from('book_covers').upload(safe, file, { contentType: file.type, upsert: true });
     if(up.error){ toast(up.error.message); return; }
-    const pub = supabase.storage.from('book_covers').getPublicUrl(up.data.path); logo_url = pub.data.publicUrl;
+    const pub = db.storage.from('book_covers').getPublicUrl(up.data.path); logo_url = pub.data.publicUrl;
   }
   const payload = {
     id: 1,
@@ -718,7 +720,7 @@ $('#settingsForm')?.addEventListener('submit', async (e)=>{
     tagline: document.getElementById('st_tagline').value || null,
   };
   if(logo_url) payload.logo_url = logo_url;
-  const { error } = await supabase.from('settings').upsert(payload, { onConflict: 'id' });
+  const { error } = await db.from('settings').upsert(payload, { onConflict: 'id' });
   if(error) return toast(error.message);
   toast('تنظیمات ذخیره شد');
   loadSettings();
@@ -768,13 +770,13 @@ document.getElementById('formBookModal')?.addEventListener('submit', async (e)=>
       payload.cover_url = link;
     } else if(file){
       const safeName = ('c'+Date.now()+'-'+file.name).replace(/[^a-zA-Z0-9\.\-_]/g,'_');
-      const up = await supabase.storage.from('book_covers').upload(safeName, file, { contentType: file.type, upsert: true });
+      const up = await db.storage.from('book_covers').upload(safeName, file, { contentType: file.type, upsert: true });
       if(up.error){ toast(up.error.message); return; }
-      const pub = supabase.storage.from('book_covers').getPublicUrl(up.data.path); payload.cover_url = pub.data.publicUrl;
+      const pub = db.storage.from('book_covers').getPublicUrl(up.data.path); payload.cover_url = pub.data.publicUrl;
     }
   }catch(err){ toast(err.message||'خطا در پردازش عکس جلد'); return; }
 
-  const { error } = await supabase.from('books').update(payload).eq('id', id);
+  const { error } = await db.from('books').update(payload).eq('id', id);
   if(error){ toast(error.message); return; }
   toast('ویرایش شد');
   // mark as bound to avoid duplicate listener later
@@ -804,11 +806,11 @@ document.getElementById('formMemberModal')?.addEventListener('submit', async (e)
     email: document.getElementById('mm_email').value.trim() || null,
   };
   if(id){
-    const { error } = await supabase.from('members').update(payload).eq('id', parseInt(id,10));
+    const { error } = await db.from('members').update(payload).eq('id', parseInt(id,10));
     if(error){ toast(error.message); return; }
     toast('ویرایش شد');
   }else{
-    const { error } = await supabase.from('members').insert(payload);
+    const { error } = await db.from('members').insert(payload);
     if(error){ toast(error.message); return; }
     toast('عضو افزوده شد');
   }
@@ -822,7 +824,7 @@ document.getElementById('btnAddMember')?.addEventListener('click', openAddMember
 
 async function editLoan(id){
   // Load loan
-  const { data: l, error } = await supabase.from('loans')
+  const { data: l, error } = await db.from('loans')
     .select('id, member_id, borrowed_at, due_at, members:member_id(first_name,last_name)')
     .eq('id', id).maybeSingle();
   if(error || !l){ toast('یافت نشد'); return; }
@@ -864,7 +866,7 @@ async function editLoan(id){
   q.oninput = async (e)=>{
     const s = e.target.value.trim();
     if(!s){ res.innerHTML=''; res.dataset.sel=''; return; }
-    let { data } = await supabase.from('members')
+    let { data } = await db.from('members')
       .select('id,first_name,last_name,student_id')
       .or(`first_name.ilike.%${s}%,last_name.ilike.%${s}%,student_id.ilike.%${s}%`)
       .limit(10);
@@ -896,7 +898,7 @@ async function editLoan(id){
     };
     const sel = res.dataset.sel ? parseInt(res.dataset.sel,10) : null;
     if(sel && sel !== l.member_id) payload.member_id = sel;
-    const { error: e2 } = await supabase.from('loans').update(payload).eq('id', id);
+    const { error: e2 } = await db.from('loans').update(payload).eq('id', id);
     if(e2){ toast(e2.message || 'خطا در ذخیره'); return; }
     toast('امانت ویرایش شد');
     onCancel();
@@ -938,8 +940,6 @@ async function editLoan(id){
 
 </script>
 
-  <!-- === Modals === -->
-  <!-- Book Modal -->
   <div id="modalBook" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 overflow-y-auto p-4">
     <div class="bg-slate-800 rounded-2xl p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
       <div class="flex items-center justify-between mb-4">
@@ -978,7 +978,6 @@ async function editLoan(id){
     </div>
   </div>
 
-  <!-- Member Modal -->
   <div id="modalMember" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60">
     <div class="bg-slate-800 rounded-2xl p-5 w-full max-w-xl">
       <div class="flex items-center justify-between mb-4">
@@ -1001,7 +1000,6 @@ async function editLoan(id){
     </div>
   </div>
 
-  <!-- Loan Modal -->
   <div id="modalLoan" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60">
     <div class="bg-slate-800 rounded-2xl p-5 w-full max-w-xl">
       <div class="flex items-center justify-between mb-4">
@@ -1026,7 +1024,7 @@ window.editBook = async function(input){
   try{
     let b = input;
     if(typeof input === 'number'){
-      const { data, error } = await supabase.from('books').select('*').eq('id', input).maybeSingle();
+      const { data, error } = await db.from('books').select('*').eq('id', input).maybeSingle();
       if(error || !data){ toast('کتاب یافت نشد'); return; }
       b = data;
     }
@@ -1057,7 +1055,7 @@ window.editMember = async function(input){
   try{
     let m = input;
     if(typeof input === 'number'){
-      const { data, error } = await supabase.from('members').select('*').eq('id', input).maybeSingle();
+      const { data, error } = await db.from('members').select('*').eq('id', input).maybeSingle();
       if(error || !data){ toast('عضو یافت نشد'); return; }
       m = data;
     }
@@ -1094,7 +1092,7 @@ document.addEventListener('DOMContentLoaded', function(){
           pages: parseInt(document.getElementById('mb_pages').value,10) || null,
           total_copies: parseInt(document.getElementById('mb_total_copies').value,10) || 1,
         };
-        const { error } = await supabase.from('books').update(payload).eq('id', id);
+        const { error } = await db.from('books').update(payload).eq('id', id);
         if(error) return toast(error.message);
         toast('کتاب به‌روزرسانی شد'); closeModal('modalBook');
         if(typeof loadCatalog==='function') loadCatalog();
@@ -1119,7 +1117,7 @@ document.addEventListener('DOMContentLoaded', function(){
           phone: document.getElementById('mm_phone').value.trim() || null,
           email: document.getElementById('mm_email').value.trim() || null,
         };
-        const { error } = await supabase.from('members').update(payload).eq('id', id);
+        const { error } = await db.from('members').update(payload).eq('id', id);
         if(error) return toast(error.message);
         toast('عضو به‌روزرسانی شد'); closeModal('modalMember');
         if(typeof loadMembers==='function') loadMembers();
@@ -1288,7 +1286,6 @@ function jalaliFromISO(iso){
   </div>
 </div>
 
-<!-- Edit Loan Modal -->
 <div id="edit-loan-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
   <div class="bg-slate-800 text-white rounded-2xl p-4 w-[95%] max-w-2xl space-y-4">
     <div class="text-lg font-bold">ویرایش امانت</div>
@@ -1323,7 +1320,7 @@ async function setDefaultLoanDates(){
   try{
     let days = 14;
 try{
-  const { data: st } = await supabase.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
+  const { data: st } = await db.from('settings').select('default_loan_days').eq('id',1).maybeSingle();
   if(st && typeof st.default_loan_days === 'number') days = st.default_loan_days; window.__loan_days__ = days;
 }catch(_){}
 const now = new Date();
@@ -1429,13 +1426,13 @@ const now = new Date();
         payload.cover_url = link;
       } else if(file){
         const safeName = ('c'+Date.now()+'-'+file.name).replace(/[^a-zA-Z0-9\\._-]/g,'_');
-        const up = await supabase.storage.from('book_covers').upload(safeName, file, { contentType: file.type, upsert: true });
+        const up = await db.storage.from('book_covers').upload(safeName, file, { contentType: file.type, upsert: true });
         if(up.error){ toast(up.error.message); return; }
-        const pub = supabase.storage.from('book_covers').getPublicUrl(up.data.path); payload.cover_url = pub.data.publicUrl;
+        const pub = db.storage.from('book_covers').getPublicUrl(up.data.path); payload.cover_url = pub.data.publicUrl;
       }
     }catch(err){ toast(err.message||'خطا در پردازش عکس جلد'); return; }
 
-    const upd = await supabase.from('books').update(payload).eq('id', id).select();
+    const upd = await db.from('books').update(payload).eq('id', id).select();
     if(upd.error){ toast(upd.error.message); return; }
     if(!upd.data || upd.data.length === 0){ toast('هیچ رکوردی بروزرسانی نشد (شناسه یافت نشد)'); return; }
 
@@ -1444,6 +1441,3 @@ const now = new Date();
   });
 })();
 </script>
-
-</body>
-</html>
